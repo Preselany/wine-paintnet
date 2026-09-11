@@ -202,7 +202,7 @@ HRESULT d2d_histogram_draw(struct d2d_effect *effect, struct d2d_device_context 
 {
     struct histogram_effect *histogram;
     struct d2d_bitmap *bitmap;
-    ID2D1Bitmap *input;
+    struct d2d_effect_image input;
     ID3D11Device *input_device;
     ID3D11Device1 *device = context->d3d_device;
     ID3D11DeviceContext1 *immediate;
@@ -222,12 +222,12 @@ HRESULT d2d_histogram_draw(struct d2d_effect *effect, struct d2d_device_context 
     histogram = impl_from_ID2D1EffectImpl(effect->impl);
     histogram->valid = FALSE;
     if (!effect->input_count || !effect->inputs[0]) return D2DERR_WRONG_STATE;
-    if ((hr = d2d_effect_resolve_bitmap(context, effect->inputs[0], &input)) != S_OK)
+    if ((hr = d2d_effect_resolve_image(context, effect->inputs[0], &input)) != S_OK)
     {
         if (hr == S_FALSE) FIXME("Histogram input effect graph is not implemented.\n");
         return hr == S_FALSE ? E_NOTIMPL : hr;
     }
-    bitmap = unsafe_impl_from_ID2D1Bitmap(input);
+    bitmap = unsafe_impl_from_ID2D1Bitmap(input.bitmap);
     if (!bitmap->srv)
     {
         hr = D2DERR_BITMAP_CANNOT_DRAW;
@@ -254,10 +254,10 @@ HRESULT d2d_histogram_draw(struct d2d_effect *effect, struct d2d_device_context 
     {
         float scale_x = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 1.0f : context->desc.dpiX / 96.0f;
         float scale_y = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 1.0f : context->desc.dpiY / 96.0f;
-        float left = ceilf(image_rect->left * scale_x - 0.5f);
-        float top = ceilf(image_rect->top * scale_y - 0.5f);
-        float right = ceilf(image_rect->right * scale_x - 0.5f);
-        float bottom = ceilf(image_rect->bottom * scale_y - 0.5f);
+        float left = ceilf(image_rect->left * scale_x - 0.5f) - input.rect.left;
+        float top = ceilf(image_rect->top * scale_y - 0.5f) - input.rect.top;
+        float right = ceilf(image_rect->right * scale_x - 0.5f) - input.rect.left;
+        float bottom = ceilf(image_rect->bottom * scale_y - 0.5f) - input.rect.top;
         if (!isfinite(left) || !isfinite(top) || !isfinite(right) || !isfinite(bottom))
         {
             hr = E_INVALIDARG;
@@ -332,6 +332,6 @@ done:
     if (staging) ID3D11Buffer_Release(staging);
     if (uav) ID3D11UnorderedAccessView_Release(uav);
     if (counts) ID3D11Buffer_Release(counts);
-    ID2D1Bitmap_Release(input);
+    ID2D1Bitmap_Release(input.bitmap);
     return hr;
 }

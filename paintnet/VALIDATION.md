@@ -244,3 +244,60 @@ Matrix (`407f8c08-5533-4331-a341-23cc3877843e`). The matching crash file identif
 failed test application was closed only in the isolated development prefix.
 Evidence: `logs/paintnet-20260911-213601-166029.log` and
 `app/Paint.NET App Files/CrashLogs/pdncrash.7.log` in the work directory.
+
+
+## Convolve Matrix and intermediate coordinates
+
+The new regression passes **1,496 checks**, including rendered-pixel comparisons
+for the default identity, one- and two-dimensional averaging, an asymmetric
+edge kernel, soft padding, mirrored borders, fractional offsets, divisor/bias,
+HDR output, alpha preservation, clamping before premultiplication, zero divisor,
+caller-owned kernel storage, source-content changes, nested convolution, and
+convolution feeding Alpha Mask or Histogram. Crop/offset tests include negative
+image origins. DPI tests use a half-DIP kernel unit at 192 DPI and pixel units
+with the context still set to 192 DPI. Stock Wine stops at missing registration:
+two checks, one failure.
+
+The image evaluator now carries each intermediate's integer pixel rectangle.
+Bounds-only evaluation computes those rectangles without rendering. Alpha Mask
+intersects and aligns its two input rectangles; Histogram translates its crop
+into the intermediate's texture coordinates. The common compute dispatcher
+retains the previous device-context state handling and resource-domain checks.
+
+An initial full-suite run found four surface mismatches because the revised
+DrawImage path treated inverted rectangles as empty. The existing native-derived
+suite expects them to be ignored. After preserving that behavior, the final
+suite again matches stock: 17,151 checks, 243 todos, two identical unexpected
+todo successes, and one reference-device skip. The focused case also checks
+inverted rectangles on convolution output.
+
+Final focused results: identity 26, context/resources 71, Histogram 130,
+Opacity Metadata 47, Alpha Mask 488, Convolve Matrix 1,496: **2,258 checks,
+zero failures and zero skips**. The lookup upload diagnostic compares 120 rows
+with no failures. Build output has no compiler warnings or errors.
+
+Limitations: native Windows results have not been recorded. Exact convolution
+bounds, kernel-offset conventions, numerical edge cases, and property validation
+still need that comparison. The implemented path requires kernel-unit spacing
+of exactly one input pixel after DPI conversion. Other spacings return
+E_NOTIMPL; pre/post-resampling for the ScaleMode choices is not implemented.
+The compute path requires feature level 11.0. Precision selection, caches, and
+unrelated custom transform renderers remain incomplete.
+
+References: Microsoft's [Convolve Matrix description](https://learn.microsoft.com/en-us/windows/win32/direct2d/convolve-matrix),
+[SDK property declarations](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/d2d1effects.h),
+and [Win2D property setup and validation](https://github.com/microsoft/Win2D/blob/winappsdk/main/winrt/lib/effects/generated/ConvolveMatrixEffect.cpp).
+The SDK and Win2D both declare KernelUnitLength as VECTOR2, despite the overview
+page's FLOAT description; the implementation follows those declarations.
+
+Application retest: all 312 binaries passed integrity checks. The trace passes
+Convolve Matrix and next fails on Contrast
+(`b648a78a-0ed5-4f80-a94a-8e825aca6b77`). The crash remains in EffectCategories
+initialization, and diagnostic collection still reports the missing presentation
+factory export. The failed application was stopped only in the isolated prefix.
+
+Evidence outside the repository: `logs/convolve-stock.log`,
+`logs/convolve-first.log`, `logs/convolve-final.log`, `logs/convolve-upload.log`,
+`logs/d2d1-suite-convolve.log`, `logs/d2d1-suite-convolve-final.log`,
+`logs/build-convolve-final.log`, `logs/paintnet-20260911-215307-179341.log`,
+and `app/Paint.NET App Files/CrashLogs/pdncrash.8.log`.

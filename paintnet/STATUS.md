@@ -116,9 +116,34 @@ failure is Convolve Matrix (`407f8c08-5533-4331-a341-23cc3877843e`). The new
 crash log still reports the absent presentation-factory export during diagnostic
 collection. No editor, editing operation, or file round trip has been verified.
 
+## Fifth Wine change: Convolve Matrix and image coordinates
+
+Convolve Matrix now has its own properties and a compute shader that applies
+an arbitrary matrix, divisor, and bias. It supports transparent padding or
+mirrored borders, fractional kernel offsets, alpha preservation, and clamping
+before premultiplication. Intermediate coordinates can extend left/up of zero,
+and survive nested convolution, Alpha Mask, crop/offset drawing, and Histogram.
+Alpha Mask and convolution share resource creation and compute dispatch code.
+
+The convolution case passes 1,496 checks and all six focused cases total 2,258
+passing checks. The lookup diagnostic still verifies 120 rows. A regression
+caught by the existing drawing suite was fixed: inverted DrawImage rectangles
+again follow its established native behavior. The final full suite matches the
+stock-Wine baseline. These tests do not establish native Windows conformance.
+
+Current convolution rendering requires one input pixel per kernel unit after
+context-DPI conversion. Other spacings return E_NOTIMPL because their resampling
+passes are still missing. The effect also currently requires feature level 11.0;
+precision selection and caching remain incomplete. These limits are not full
+Convolve Matrix compatibility.
+
+The unchanged application passes the Convolve Matrix metadata lookup. Its next
+missing registration is Contrast (`b648a78a-0ed5-4f80-a94a-8e825aca6b77`). It
+still crashes during effect-category initialization; no editor has opened.
+
 ## Observed remaining failures
 
-* Missing Convolve Matrix effect registration/implementation, now the first
+* Missing Contrast effect registration/implementation, now the first
   failing category lookup. Further builtin effects and general effect-graph evaluation
   still need implementation.
 * Retest Paint.NET's device feature probe after its effect-category initializer

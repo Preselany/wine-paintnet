@@ -4,7 +4,7 @@ set -euo pipefail
 here="$(cd -- "$(dirname -- "$0")" && pwd)"
 work_root="$(realpath -e -- "${1:-$here/work}")"
 if [[ $# -gt 0 ]]; then shift; fi
-if [[ $# == 0 ]]; then set -- effect_identity effect_context histogram opacity_metadata alpha_mask; fi
+if [[ $# == 0 ]]; then set -- effect_identity effect_context histogram opacity_metadata alpha_mask convolve_matrix; fi
 export WINEPREFIX="$work_root/prefix" WINEDEBUG="${WINEDEBUG:--all}"
 export DXVK_LOG_LEVEL="${DXVK_LOG_LEVEL:-error}"
 export WINEDLLOVERRIDES='d2d1=b;d3d11=n;d3d10core=n;dxgi=n;mshtml='

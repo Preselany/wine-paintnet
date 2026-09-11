@@ -790,6 +790,7 @@ static inline struct d2d_factory *unsafe_impl_from_ID2D1Factory(ID2D1Factory *if
 void d2d_effects_init_builtins(struct d2d_factory *factory);
 void d2d_histogram_init_builtin(struct d2d_factory *factory);
 void d2d_alpha_mask_init_builtin(struct d2d_factory *factory);
+void d2d_convolve_matrix_init_builtin(struct d2d_factory *factory);
 HRESULT d2d_factory_create_device(ID2D1Factory1 *factory, IDXGIDevice *dxgi_device,
         bool allow_get_dxgi_device, REFIID iid, void **device);
 struct d2d_effect_registration * d2d_factory_get_registered_effect(ID2D1Factory *factory,
@@ -885,9 +886,25 @@ struct d2d_effect
 
 HRESULT d2d_histogram_draw(struct d2d_effect *effect, struct d2d_device_context *context,
         const D2D1_RECT_F *image_rect);
+struct d2d_effect_image
+{
+    ID2D1Bitmap *bitmap;
+    D2D1_RECT_L rect;
+};
+
+HRESULT d2d_effect_compile_compute_shader(ID3D11Device1 *device, const char *source,
+        ID3D11ComputeShader **shader);
+HRESULT d2d_effect_dispatch(struct d2d_device_context *context, ID3D11ComputeShader *shader,
+        const struct d2d_effect_image *inputs, unsigned int count, const void *data, UINT size,
+        ID3D11ShaderResourceView *extra, struct d2d_effect_image *output);
+HRESULT d2d_convolve_matrix_bounds(struct d2d_effect *effect, struct d2d_device_context *context,
+        const D2D1_RECT_L *input, D2D1_RECT_L *output);
+HRESULT d2d_convolve_matrix_render(struct d2d_effect *effect, struct d2d_device_context *context,
+        const struct d2d_effect_image *input, struct d2d_effect_image *output);
 HRESULT d2d_alpha_mask_render(struct d2d_effect *effect, struct d2d_device_context *context,
-        ID2D1Bitmap *destination, ID2D1Bitmap *mask, ID2D1Bitmap **output);
-HRESULT d2d_effect_resolve_bitmap(struct d2d_device_context *context, ID2D1Image *image, ID2D1Bitmap **bitmap);
+        const struct d2d_effect_image *inputs, struct d2d_effect_image *output);
+HRESULT d2d_effect_resolve_image(struct d2d_device_context *context, ID2D1Image *image,
+        struct d2d_effect_image *output);
 HRESULT d2d_effect_get_image_bounds(struct d2d_device_context *context, ID2D1Image *image, D2D1_RECT_F *bounds);
 HRESULT d2d_effect_draw_image(struct d2d_device_context *context, ID2D1Image *image,
         const D2D1_RECT_F *image_rect);

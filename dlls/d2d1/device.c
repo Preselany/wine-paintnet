@@ -2691,7 +2691,7 @@ static void STDMETHODCALLTYPE d2d_device_context_DrawImage(ID2D1DeviceContext6 *
         D2D1_COMPOSITE_MODE composite_mode)
 {
     struct d2d_device_context *context = impl_from_ID2D1DeviceContext(iface);
-    ID2D1Bitmap *bitmap;
+    struct d2d_effect_image resolved;
     HRESULT hr;
 
     TRACE("iface %p, image %p, target_offset %s, image_rect %s, interpolation_mode %#x, composite_mode %#x.\n",
@@ -2717,7 +2717,7 @@ static void STDMETHODCALLTYPE d2d_device_context_DrawImage(ID2D1DeviceContext6 *
     if (composite_mode != D2D1_COMPOSITE_MODE_SOURCE_OVER)
         FIXME("Unhandled composite mode %#x.\n", composite_mode);
 
-    hr = d2d_effect_resolve_bitmap(context, image, &bitmap);
+    hr = d2d_effect_resolve_image(context, image, &resolved);
     if (FAILED(hr))
     {
         d2d_device_context_set_error(context, hr);
@@ -2725,9 +2725,39 @@ static void STDMETHODCALLTYPE d2d_device_context_DrawImage(ID2D1DeviceContext6 *
     }
     if (hr == S_OK)
     {
-        d2d_device_context_draw_bitmap(context, bitmap, NULL, 1.0f, interpolation_mode, image_rect, target_offset, NULL);
-
-        ID2D1Bitmap_Release(bitmap);
+        D2D1_RECT_F source, requested;
+        D2D1_POINT_2F offset = {0};
+        float scale_x, scale_y;
+        ID2D1Bitmap_GetDpi(resolved.bitmap, &scale_x, &scale_y);
+        scale_x = 96.0f / scale_x;
+        scale_y = 96.0f / scale_y;
+        source.left = resolved.rect.left * scale_x;
+        source.top = resolved.rect.top * scale_y;
+        source.right = resolved.rect.right * scale_x;
+        source.bottom = resolved.rect.bottom * scale_y;
+        /* Native DrawImage ignores an inverted source rectangle. */
+        requested = image_rect && image_rect->left <= image_rect->right && image_rect->top <= image_rect->bottom
+                ? *image_rect : source;
+        if (target_offset) offset = *target_offset;
+        if (requested.left < requested.right && requested.top < requested.bottom)
+        {
+            source.left = max(source.left, requested.left);
+            source.top = max(source.top, requested.top);
+            source.right = min(source.right, requested.right);
+            source.bottom = min(source.bottom, requested.bottom);
+            if (source.left < source.right && source.top < source.bottom)
+            {
+                offset.x += source.left - requested.left;
+                offset.y += source.top - requested.top;
+                source.left -= resolved.rect.left * scale_x;
+                source.right -= resolved.rect.left * scale_x;
+                source.top -= resolved.rect.top * scale_y;
+                source.bottom -= resolved.rect.top * scale_y;
+                d2d_device_context_draw_bitmap(context, resolved.bitmap, NULL, 1.0f,
+                        interpolation_mode, &source, &offset, NULL);
+            }
+        }
+        ID2D1Bitmap_Release(resolved.bitmap);
         return;
     }
 
