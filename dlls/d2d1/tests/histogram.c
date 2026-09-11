@@ -163,7 +163,11 @@ START_TEST(histogram)
     channel = D2D1_CHANNEL_SELECTOR_R;
     ID2D1Effect_SetValue(effect, D2D1_HISTOGRAM_PROP_CHANNEL_SELECT, D2D1_PROPERTY_TYPE_ENUM,
             (BYTE *)&channel, sizeof(channel));
+    /* Effect coordinates use context DPI, independently of bitmap DPI. */
+    ID2D1DeviceContext_SetDpi(context, 192, 192);
     draw_histogram(context, effect, &dip_crop, cropped, 4);
+    ID2D1DeviceContext_SetDpi(context, 96, 96);
+    draw_histogram(context, effect, &crop, cropped, 4);
     ID2D1DeviceContext_SetUnitMode(context, D2D1_UNIT_MODE_PIXELS);
     draw_histogram(context, effect, &crop, cropped, 4);
     value = 8;

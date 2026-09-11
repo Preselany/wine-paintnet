@@ -222,7 +222,7 @@ HRESULT d2d_histogram_draw(struct d2d_effect *effect, struct d2d_device_context 
     histogram = impl_from_ID2D1EffectImpl(effect->impl);
     histogram->valid = FALSE;
     if (!effect->input_count || !effect->inputs[0]) return D2DERR_WRONG_STATE;
-    if ((hr = d2d_effect_resolve_bitmap(effect->inputs[0], &input)) != S_OK)
+    if ((hr = d2d_effect_resolve_bitmap(context, effect->inputs[0], &input)) != S_OK)
     {
         if (hr == S_FALSE) FIXME("Histogram input effect graph is not implemented.\n");
         return hr == S_FALSE ? E_NOTIMPL : hr;
@@ -233,7 +233,7 @@ HRESULT d2d_histogram_draw(struct d2d_effect *effect, struct d2d_device_context 
         hr = D2DERR_BITMAP_CANNOT_DRAW;
         goto done;
     }
-    if (bitmap == context->target.bitmap)
+    if (context->target.type == D2D_TARGET_BITMAP && bitmap->resource == context->target.bitmap->resource)
     {
         hr = D2DERR_BITMAP_BOUND_AS_TARGET;
         goto done;
@@ -252,8 +252,8 @@ HRESULT d2d_histogram_draw(struct d2d_effect *effect, struct d2d_device_context 
     params[3] = bitmap->pixel_size.height;
     if (image_rect)
     {
-        float scale_x = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 1.0f : bitmap->dpi_x / 96.0f;
-        float scale_y = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 1.0f : bitmap->dpi_y / 96.0f;
+        float scale_x = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 1.0f : context->desc.dpiX / 96.0f;
+        float scale_y = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 1.0f : context->desc.dpiY / 96.0f;
         float left = ceilf(image_rect->left * scale_x - 0.5f);
         float top = ceilf(image_rect->top * scale_y - 0.5f);
         float right = ceilf(image_rect->right * scale_x - 0.5f);

@@ -174,3 +174,73 @@ one reference-device skip as stock Wine. The final unit-mode correction is
 covered by the focused before/after test. Evidence:
 `logs/d2d1-suite-analysis-final.log` and
 `logs/histogram-pixel-units-before.log`.
+
+
+## Alpha Mask and branched input graphs
+
+Alpha Mask is registered under its own SDK CLSID with two inputs and no custom
+properties. A compute shader multiplies premultiplied destination RGBA by mask
+alpha. Intermediate pixels use RGBA32 float, retaining HDR values. The graph
+walker evaluates nested Alpha Mask and Opacity Metadata inputs without C-stack
+recursion and detects cycles through either input. Bounds queries walk the same
+supported graph without allocating or rendering intermediate textures.
+
+The new Alpha Mask case passes **488 checks**, including real texture readback
+for fractional alpha, transparent pixels, mask RGB independence, HDR channels,
+nested/shared graph branches, repeated rendering, crop/offset, differently sized
+inputs, ignored alpha on either input, in-place mask updates, 96/192 DPI drawing,
+pixel units, and unchanged source pixels. Error cases cover missing inputs,
+cycles, nondrawable bitmaps, a target used as an input, and a separate bitmap
+object sharing the target resource. Breaking a cycle restores successful draws.
+A Histogram consuming Alpha Mask output returns the expected normalized bins.
+Stock Wine fails at Alpha Mask metadata: three checks, one failure.
+
+The initial Alpha Mask pixel-unit test exposed 26 wrong channels when its
+192-DPI output was interpreted as DIPs. Effect intermediates now use the
+context's effective DPI; pixel-unit drawing also honors the unit mode in the
+geometry and axis-aligned-clip transforms. The first combined run exposed an
+older Histogram test's incorrect assumption that an effect crop followed the
+source bitmap DPI. Crop conversion now uses context DPI, and the regression
+explicitly sets the context DPI and checks both 96/192-DPI crops. The older
+Histogram DPI results above describe the earlier revision and are superseded
+by this correction.
+
+Final focused results: COM identity 26, EffectContext1 71, Histogram 130,
+Opacity Metadata 47, Alpha Mask 488: **762 checks, zero failures, zero skips**.
+The internal lookup diagnostic still verifies 120 texture rows with no failures.
+
+These are implementation regressions on Wine/DXVK/llvmpipe, not native Windows
+conformance results. In particular, effect bounds/DPI behavior and exact error
+codes still need native comparison. The effect uses SM5 compute and currently
+requires feature level 11.0; a lower-feature-level pixel-shader path is not
+implemented. Intermediate-precision selection and render-cache optimizations
+remain incomplete. General custom transform graphs and other builtin effect
+renderers are not supplied by this change.
+
+References: Microsoft's [Alpha Mask documentation](https://learn.microsoft.com/en-us/windows/win32/direct2d/alpha-mask-effect),
+[unit modes](https://learn.microsoft.com/en-us/windows/win32/api/d2d1_1/ne-d2d1_1-d2d1_unit_mode),
+and [Win2D DPI compensation behavior](https://microsoft.github.io/Win2D/WinUI3/html/T_Microsoft_Graphics_Canvas_Effects_DpiCompensationEffect.htm).
+The last source describes Win2D inserting explicit compensation effects; the
+Wine implementation follows pixel-based transforms and context-based output
+coordinates rather than automatically resampling Alpha Mask's input bitmaps.
+
+Evidence outside the repository: `logs/alpha-mask-stock.log`,
+`logs/alpha-mask-first.log`, `logs/alpha-mask-focused.log`,
+`logs/alpha-mask-final.log`, `logs/alpha-mask-upload.log`, and
+`logs/build-alpha-mask-final.log`.
+
+
+The full upstream test case was rerun after the final Alpha Mask, context-DPI,
+and pixel-unit changes: **17,151 checks, 243 todos, the same two unexpected
+todo successes and one unavailable reference-device skip**, matching the
+recorded stock baseline. No new failing assertion appeared. Evidence:
+`logs/d2d1-suite-alpha-mask.log`.
+
+The application launch verified all 312 original binaries. The trace passes
+Histogram, Opacity Metadata, and Alpha Mask, then reports missing Convolve
+Matrix (`407f8c08-5533-4331-a341-23cc3877843e`). The matching crash file identifies
+`EffectCategories` initialization and again reports the missing
+`dcomp!CreatePresentationFactory` export during diagnostic collection. The
+failed test application was closed only in the isolated development prefix.
+Evidence: `logs/paintnet-20260911-213601-166029.log` and
+`app/Paint.NET App Files/CrashLogs/pdncrash.7.log` in the work directory.

@@ -1908,6 +1908,7 @@ void d2d_effects_init_builtins(struct d2d_factory *factory)
         }
     }
     d2d_histogram_init_builtin(factory);
+    d2d_alpha_mask_init_builtin(factory);
 }
 
 /* Same syntax is used for value and default values. */
@@ -3053,36 +3054,183 @@ static const ID2D1ImageVtbl d2d_effect_image_vtbl =
     d2d_effect_image_GetFactory,
 };
 
-static HRESULT d2d_opacity_metadata_get_input(ID2D1Image *image, ID2D1Image **input)
+/* Walk supported input graphs without consuming the C call stack. Each frame
+ * owns only its completed intermediate bitmaps; graph inputs are borrowed. */
+static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Image *image,
+        ID2D1Bitmap **bitmap, D2D1_RECT_F *bounds)
 {
+    struct evaluation_frame
+    {
+        struct d2d_effect *effect;
+        ID2D1Bitmap *inputs[2];
+        D2D1_RECT_F bounds[2];
+        unsigned int count, next;
+    } *frames = NULL, *frame;
     struct d2d_effect *effect;
-
-    if (image->lpVtbl != &d2d_effect_image_vtbl) return S_FALSE;
-    effect = impl_from_ID2D1Image(image);
-    if (effect->impl->lpVtbl != &opacity_metadata_vtbl) return S_FALSE;
-    if (!effect->input_count || !effect->inputs[0]) return D2DERR_WRONG_STATE;
-    *input = effect->inputs[0];
-    return S_OK;
-}
-
-HRESULT d2d_effect_resolve_bitmap(ID2D1Image *image, ID2D1Bitmap **bitmap)
-{
-    ID2D1Image *slow = image;
-    unsigned int step = 0;
+    ID2D1Bitmap *result = NULL;
+    D2D1_RECT_F result_bounds = {0};
+    BOOL effect_image = image && image->lpVtbl == &d2d_effect_image_vtbl;
+    size_t capacity = 0, depth = 0, i;
+    unsigned int count, j;
+    CLSID clsid;
     HRESULT hr;
 
-    /* Opacity metadata is a rendering hint, so the pixel data is unchanged.
-     * Detect cycles while walking nested metadata without recursive calls. */
+    if (bitmap) *bitmap = NULL;
+    if (!image) return E_INVALIDARG;
     for (;;)
     {
-        if (SUCCEEDED(ID2D1Image_QueryInterface(image, &IID_ID2D1Bitmap, (void **)bitmap)))
-            return S_OK;
-        if ((hr = d2d_opacity_metadata_get_input(image, &image)) != S_OK)
-            return hr;
-        if (++step % 2 == 0 && (hr = d2d_opacity_metadata_get_input(slow, &slow)) != S_OK)
-            return hr;
-        if (image == slow) return D2DERR_CYCLIC_GRAPH;
+        if (FAILED(ID2D1Image_QueryInterface(image, &IID_ID2D1Bitmap, (void **)&result)))
+        {
+            if (image->lpVtbl != &d2d_effect_image_vtbl)
+            {
+                hr = depth ? E_NOTIMPL : S_FALSE;
+                break;
+            }
+            effect = impl_from_ID2D1Image(image);
+            for (i = 0; i < depth; ++i)
+                if (frames[i].effect == effect) break;
+            if (i != depth)
+            {
+                hr = D2DERR_CYCLIC_GRAPH;
+                break;
+            }
+            if (effect->effect_context->device_context->d3d_device != context->d3d_device)
+            {
+                hr = D2DERR_WRONG_RESOURCE_DOMAIN;
+                break;
+            }
+            if (FAILED(hr = d2d_effect_get_value(effect, D2D1_PROPERTY_CLSID, D2D1_PROPERTY_TYPE_CLSID,
+                    (BYTE *)&clsid, sizeof(clsid)))) break;
+            if (effect->impl->lpVtbl == &opacity_metadata_vtbl) count = 1;
+            else if (IsEqualGUID(&clsid, &CLSID_D2D1AlphaMask)) count = 2;
+            else
+            {
+                hr = depth ? E_NOTIMPL : S_FALSE;
+                break;
+            }
+            if (effect->input_count != count)
+            {
+                hr = D2DERR_WRONG_STATE;
+                break;
+            }
+            for (j = 0; j < count; ++j)
+                if (!effect->inputs[j]) break;
+            if (j != count)
+            {
+                hr = D2DERR_WRONG_STATE;
+                break;
+            }
+            if (!d2d_array_reserve((void **)&frames, &capacity, depth + 1, sizeof(*frames)))
+            {
+                hr = E_OUTOFMEMORY;
+                break;
+            }
+            frame = &frames[depth++];
+            memset(frame, 0, sizeof(*frame));
+            frame->effect = effect;
+            frame->count = count;
+            image = effect->inputs[0];
+            continue;
+        }
+        if (bounds)
+        {
+            if (depth || context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS)
+            {
+                D2D1_SIZE_U size = ID2D1Bitmap_GetPixelSize(result);
+                result_bounds.right = size.width;
+                result_bounds.bottom = size.height;
+                if (context->drawing_state.unitMode != D2D1_UNIT_MODE_PIXELS)
+                {
+                    result_bounds.right *= 96.0f / context->desc.dpiX;
+                    result_bounds.bottom *= 96.0f / context->desc.dpiY;
+                }
+            }
+            else
+            {
+                D2D1_SIZE_F size = ID2D1Bitmap_GetSize(result);
+                result_bounds.right = size.width;
+                result_bounds.bottom = size.height;
+            }
+            ID2D1Bitmap_Release(result);
+            result = NULL;
+        }
+        for (;;)
+        {
+            if (!depth)
+            {
+                if (bounds) *bounds = result_bounds;
+                else
+                {
+                    if (effect_image)
+                    {
+                        struct d2d_bitmap *shared, *impl = unsafe_impl_from_ID2D1Bitmap(result);
+                        D2D1_BITMAP_PROPERTIES1 desc = {impl->format,
+                                context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 96 : context->desc.dpiX,
+                                context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 96 : context->desc.dpiY,
+                                impl->options, NULL};
+                        if (desc.dpiX != impl->dpi_x || desc.dpiY != impl->dpi_y)
+                        {
+                            hr = d2d_bitmap_create_shared(context, &IID_ID2D1Bitmap, result, &desc, &shared);
+                            if (FAILED(hr)) goto done;
+                            ID2D1Bitmap_Release(result);
+                            result = (ID2D1Bitmap *)&shared->ID2D1Bitmap1_iface;
+                        }
+                    }
+                    *bitmap = result;
+                }
+                free(frames);
+                return S_OK;
+            }
+            frame = &frames[depth - 1];
+            frame->inputs[frame->next] = result;
+            frame->bounds[frame->next++] = result_bounds;
+            result = NULL;
+            if (frame->next < frame->count)
+            {
+                image = frame->effect->inputs[frame->next];
+                break;
+            }
+            if (bounds)
+            {
+                result_bounds = frame->bounds[0];
+                if (frame->count == 2)
+                {
+                    result_bounds.right = min(result_bounds.right, frame->bounds[1].right);
+                    result_bounds.bottom = min(result_bounds.bottom, frame->bounds[1].bottom);
+                }
+            }
+            else if (frame->count == 1)
+            {
+                result = frame->inputs[0];
+                frame->inputs[0] = NULL;
+            }
+            else
+            {
+                hr = d2d_alpha_mask_render(frame->effect, context, frame->inputs[0], frame->inputs[1], &result);
+                if (FAILED(hr)) goto done;
+                ID2D1Bitmap_Release(frame->inputs[0]);
+                ID2D1Bitmap_Release(frame->inputs[1]);
+            }
+            --depth;
+        }
     }
+done:
+    if (result) ID2D1Bitmap_Release(result);
+    for (i = 0; i < depth; ++i)
+        for (j = 0; j < frames[i].next; ++j)
+            if (frames[i].inputs[j]) ID2D1Bitmap_Release(frames[i].inputs[j]);
+    free(frames);
+    return hr;
+}
+
+HRESULT d2d_effect_resolve_bitmap(struct d2d_device_context *context, ID2D1Image *image, ID2D1Bitmap **bitmap)
+{
+    return d2d_effect_evaluate(context, image, bitmap, NULL);
+}
+
+HRESULT d2d_effect_get_image_bounds(struct d2d_device_context *context, ID2D1Image *image, D2D1_RECT_F *bounds)
+{
+    return d2d_effect_evaluate(context, image, NULL, bounds);
 }
 
 HRESULT d2d_effect_draw_image(struct d2d_device_context *context, ID2D1Image *image,

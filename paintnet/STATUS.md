@@ -89,10 +89,37 @@ registration is Alpha Mask (`c80ecff0-3fd5-4f05-8328-c5d1724b4f0a`). Its crash
 log also exposes a missing `CreatePresentationFactory` export from `dcomp.dll`.
 All application binaries still pass the original-archive integrity check.
 
+## Fourth Wine change: Alpha Mask and branched graphs
+
+Alpha Mask now computes destination RGBA multiplied by mask alpha in a real
+Direct3D compute shader. Its intermediate image can feed another Alpha Mask,
+Opacity Metadata, or Histogram. The evaluator walks both input branches with
+cycle detection and answers local-bounds queries without rendering. Source
+bitmaps remain unchanged; floating-point intermediate textures retain HDR color
+values. It currently requires feature level 11.0. Precision selection, caching,
+lower-feature-level support, and general custom transform graphs remain open.
+
+The focused cases now pass 762 checks: 488 for Alpha Mask and its input graphs,
+130 for Histogram, and 144 for earlier COM/context/metadata tests. Pixel tests
+cover transparency, nested masks, crops, target offsets, changing mask contents,
+96/192 DPI drawing and pixel units, and reading Histogram bins from masked
+output. The lookup diagnostic still verifies 120 rows. The existing Direct2D
+suite matches the previously recorded stock-Wine baseline. Native Windows
+conformance has not yet been tested.
+
+Effect output coordinates now use context DPI. This also corrected the older
+Histogram crop test's source-DPI assumption; its new checks explicitly vary
+context DPI. Full details and the limitations are in VALIDATION.md.
+
+The unchanged application passes the Alpha Mask category lookup. Its next
+failure is Convolve Matrix (`407f8c08-5533-4331-a341-23cc3877843e`). The new
+crash log still reports the absent presentation-factory export during diagnostic
+collection. No editor, editing operation, or file round trip has been verified.
+
 ## Observed remaining failures
 
-* Missing Alpha Mask effect registration/implementation, now the first failing
-  category lookup. Further builtin effects and general effect-graph evaluation
+* Missing Convolve Matrix effect registration/implementation, now the first
+  failing category lookup. Further builtin effects and general effect-graph evaluation
   still need implementation.
 * Retest Paint.NET's device feature probe after its effect-category initializer
   can finish. The EffectContext1 regression passes independently.

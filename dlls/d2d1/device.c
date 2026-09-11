@@ -833,13 +833,13 @@ static HRESULT d2d_device_context_update_vs_cb(struct d2d_device_context *contex
 
     w = &context->drawing_state.transform;
 
-    tmp_x = context->desc.dpiX / 96.0f;
+    tmp_x = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 1.0f : context->desc.dpiX / 96.0f;
     cb_data->transform_rtx.x = w->_11 * tmp_x;
     cb_data->transform_rtx.y = w->_21 * tmp_x;
     cb_data->transform_rtx.z = w->_31 * tmp_x;
     cb_data->transform_rtx.w = 2.0f / context->pixel_size.width;
 
-    tmp_y = context->desc.dpiY / 96.0f;
+    tmp_y = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 1.0f : context->desc.dpiY / 96.0f;
     cb_data->transform_rty.x = w->_12 * tmp_y;
     cb_data->transform_rty.y = w->_22 * tmp_y;
     cb_data->transform_rty.z = w->_32 * tmp_y;
@@ -1933,8 +1933,8 @@ static void STDMETHODCALLTYPE d2d_device_context_PushAxisAlignedClip(ID2D1Device
     if (antialias_mode != D2D1_ANTIALIAS_MODE_ALIASED)
         FIXME("Ignoring antialias_mode %#x.\n", antialias_mode);
 
-    x_scale = context->desc.dpiX / 96.0f;
-    y_scale = context->desc.dpiY / 96.0f;
+    x_scale = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 1.0f : context->desc.dpiX / 96.0f;
+    y_scale = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 1.0f : context->desc.dpiY / 96.0f;
     d2d_point_transform(&point, &context->drawing_state.transform,
             clip_rect->left * x_scale, clip_rect->top * y_scale);
     d2d_rect_set(&transformed_rect, point.x, point.y, point.x, point.y);
@@ -2424,47 +2424,17 @@ static HRESULT STDMETHODCALLTYPE d2d_device_context_GetImageLocalBounds(ID2D1Dev
         ID2D1Image *image, D2D1_RECT_F *local_bounds)
 {
     struct d2d_device_context *context = impl_from_ID2D1DeviceContext(iface);
-    D2D_SIZE_U pixel_size;
-    ID2D1Bitmap *bitmap;
-    D2D_SIZE_F size;
     HRESULT hr;
 
     TRACE("iface %p, image %p, local_bounds %p.\n", iface, image, local_bounds);
 
-    hr = d2d_effect_resolve_bitmap(image, &bitmap);
-    if (FAILED(hr)) return hr;
-    if (hr == S_OK)
-    {
-        local_bounds->left = 0.0f;
-        local_bounds->top  = 0.0f;
-        switch (context->drawing_state.unitMode)
-        {
-            case D2D1_UNIT_MODE_DIPS:
-                size = ID2D1Bitmap_GetSize(bitmap);
-                local_bounds->right  = size.width;
-                local_bounds->bottom = size.height;
-                break;
-
-            case D2D1_UNIT_MODE_PIXELS:
-                pixel_size = ID2D1Bitmap_GetPixelSize(bitmap);
-                local_bounds->right  = pixel_size.width;
-                local_bounds->bottom = pixel_size.height;
-                break;
-
-            default:
-                WARN("Unknown unit mode %#x.\n", context->drawing_state.unitMode);
-                break;
-        }
-        ID2D1Bitmap_Release(bitmap);
-
-        return S_OK;
-    }
-    else
+    hr = d2d_effect_get_image_bounds(context, image, local_bounds);
+    if (hr == S_FALSE)
     {
         FIXME("Unable to get local bounds of image %p.\n", image);
-
         return E_NOTIMPL;
     }
+    return hr;
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_device_context_GetImageWorldBounds(ID2D1DeviceContext6 *iface,
@@ -2747,7 +2717,7 @@ static void STDMETHODCALLTYPE d2d_device_context_DrawImage(ID2D1DeviceContext6 *
     if (composite_mode != D2D1_COMPOSITE_MODE_SOURCE_OVER)
         FIXME("Unhandled composite mode %#x.\n", composite_mode);
 
-    hr = d2d_effect_resolve_bitmap(image, &bitmap);
+    hr = d2d_effect_resolve_bitmap(context, image, &bitmap);
     if (FAILED(hr))
     {
         d2d_device_context_set_error(context, hr);

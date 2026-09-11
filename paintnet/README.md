@@ -61,8 +61,8 @@ its DLLs; close the development application normally before using it.
 The initial build compiles `d2d1.dll` and its tests. Additional Wine make targets
 can be supplied after the work directory as development reaches other APIs.
 
-`test.sh` runs the COM, effect-context, Histogram, and Opacity Metadata
-regressions by default. A test name can be supplied
+`test.sh` runs the COM, effect-context, Histogram, Opacity Metadata, and
+Alpha Mask regressions by default. A test name can be supplied
 after the work directory. `test-upload.sh` checks actual lookup-table texels by
 reading the fork's Direct3D texture back. It uses Wine's private structure
 layout, verifies that the installed module matches the build, and must only
