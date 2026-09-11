@@ -2126,7 +2126,7 @@ static UINT32 d2d_effect_properties_get_value_size(const struct d2d_effect_prope
 
     if (prop->get_function)
     {
-        if (FAILED(prop->get_function((IUnknown *)effect->impl, NULL, 0, &size))) return 0;
+        if (FAILED(prop->get_function(effect->impl_unknown, NULL, 0, &size))) return 0;
         return size;
     }
 
@@ -2161,7 +2161,7 @@ static HRESULT d2d_effect_property_get_value(const struct d2d_effect_properties 
     }
 
     if (get_function)
-        return get_function((IUnknown *)effect->impl, value, size, &actual_size);
+        return get_function(effect->impl_unknown, value, size, &actual_size);
 
     switch (prop->type)
     {
@@ -2195,7 +2195,7 @@ static HRESULT d2d_effect_property_set_value(struct d2d_effect_properties *prope
     if (prop->index < 0x80000000 && !prop->set_function) return E_INVALIDARG;
 
     if (prop->set_function)
-        return prop->set_function((IUnknown *)effect->impl, value, size);
+        return prop->set_function(effect->impl_unknown, value, size);
 
     if (prop->size != size) return E_INVALIDARG;
 
@@ -2625,6 +2625,8 @@ static void d2d_effect_cleanup(struct d2d_effect *effect)
     d2d_effect_properties_cleanup(&effect->properties);
     if (effect->impl)
         ID2D1EffectImpl_Release(effect->impl);
+    if (effect->impl_unknown)
+        IUnknown_Release(effect->impl_unknown);
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_effect_QueryInterface(ID2D1Effect *iface, REFIID iid, void **out)
@@ -3466,9 +3468,19 @@ HRESULT d2d_effect_create(struct d2d_device_context *context, const CLSID *effec
         return hr;
     }
 
-    if (FAILED(hr = reg->factory((IUnknown **)&object->impl)))
+    if (FAILED(hr = reg->factory(&object->impl_unknown)))
     {
         WARN("Failed to create implementation object, hr %#lx.\n", hr);
+        ID2D1Effect_Release(&object->ID2D1Effect_iface);
+        return hr;
+    }
+
+    /* The factory returns IUnknown, which need not share a vtable with the
+     * implementation interface. Keep the original pointer for property bindings. */
+    if (FAILED(hr = IUnknown_QueryInterface(object->impl_unknown, &IID_ID2D1EffectImpl,
+            (void **)&object->impl)))
+    {
+        WARN("Effect implementation does not support ID2D1EffectImpl, hr %#lx.\n", hr);
         ID2D1Effect_Release(&object->ID2D1Effect_iface);
         return hr;
     }
