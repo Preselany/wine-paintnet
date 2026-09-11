@@ -458,3 +458,23 @@ The application passes all category lookups and reaches MainForm construction.
 It then fails on CreateSmoothStopTransition while creating UserColorsControl.
 Log: paintnet-20260911-234242-236228.log; crash: pdncrash.13.log. The missing
 presentation-factory export still affects diagnostic collection.
+
+## UIAnimation
+
+Stock Wine fails all eleven timeline scenarios at transition creation (56
+checks, 11 failures). The implemented timeline case passes 2,114 checks on
+Wine and Windows; the existing animation suite passes 14 checks with one
+remaining todo for the unimplemented custom-transition factory. No skips.
+Logs: animation-timeline-stock.log, animation-suite-final.log; native batch
+016-animation-timeline.
+
+All 757 native reference records match, including event ordering and timer
+invariants. Logs: animation-reference-final.log, animation-native-comparison.log.
+The tests caught a float-boundary completion delay, callback ordering, and
+zero-duration notification differences. Build completed after correcting a
+missing stdarg include and duplicate test GUID definitions.
+
+The application run verifies all 312 original binaries and passes the animation
+constructor failure. Next failure: shader reflection in the checkerboard effect.
+Log: paintnet-20260912-000139-244700.log; crash: pdncrash.15.log. No editor or
+image round trip is verified.

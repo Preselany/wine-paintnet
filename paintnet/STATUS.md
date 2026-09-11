@@ -237,11 +237,29 @@ Its first exception is UIAnimationTransitionLibrary.CreateSmoothStopTransition,
 called while initializing the Colors panel. All 312 original binaries were
 verified unchanged; this is progress through startup, not a working editor.
 
+## UIAnimation timelines
+
+Smooth-stop, linear, and instantaneous transitions now run through a real
+time-driven storyboard engine. It updates values, preserves initial velocity,
+tracks states and previous/final values, and dispatches callbacks in measured
+Windows order. Timer GetTime uses the performance counter. The focused native
+and Wine cases each pass 2,114 checks; 757 reference records match, including
+callback order and shutdown behavior.
+
+This is a first animation implementation. Keyframes, conflict arbitration,
+custom interpolators, other transition types, and timer-driven callbacks still
+need work. Those paths are not claimed as complete.
+
+The original application gets past smooth-stop initialization. Its next crash
+is in ComputeSharp.D2D1ReflectionServices.GetShaderInfo while creating the
+checkerboard effect. Wine's shader-reflection GetMinFeatureLevel remains a
+stub; GetRequiresFlags also returns a placeholder. The editor is not usable.
+
 ## Observed remaining failures
 
-* UIAnimationTransitionLibrary.CreateSmoothStopTransition returns E_NOTIMPL
-  while constructing the main window. Animation behavior needs implementation
-  and reference tests. Further effects and general graph evaluation remain open.
+* Shader reflection fails during the custom checkerboard effect's initialization.
+  Minimum feature-level and shader-requirement reporting need implementation.
+* General Direct2D transform graphs and remaining animation features remain open.
 * Retest Paint.NET's device feature probe after its effect-category initializer
   can finish. The EffectContext1 regression passes independently.
 * Missing `dcomp.dll!CreatePresentationFactory`, observed during diagnostics.

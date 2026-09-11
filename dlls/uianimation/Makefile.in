@@ -2,6 +2,7 @@ MODULE    = uianimation.dll
 IMPORTS   = uuid
 
 SOURCES = \
+	animation.c \
 	main.c \
 	uianimation_reg.idl \
 	uianimation_typelib.idl

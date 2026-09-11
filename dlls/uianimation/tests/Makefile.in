@@ -2,4 +2,5 @@ TESTDLL = uianimation.dll
 IMPORTS = ole32
 
 SOURCES = \
+	timeline.c \
 	uianimation.c

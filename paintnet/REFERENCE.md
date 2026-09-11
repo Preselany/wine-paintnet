@@ -167,3 +167,29 @@ bounds even when opacity is zero. Like the other new compute effects it
 currently requires feature level 11.0 and uses uncached float intermediates.
 NaN-property behavior and arbitrary graph types are not established by this
 comparison. API documentation: [Microsoft Opacity effect](https://learn.microsoft.com/en-us/windows/win32/direct2d/opacity-effect).
+
+## UIAnimation
+
+The Windows public-API probe captures eleven timelines: smooth-stop with six
+initial velocities, descending and unchanged targets, linear and instantaneous
+transitions. It records values, previous/final values, integer rounding, duration
+queries, manager/storyboard states, current storyboard, update results, ordered
+callbacks, rescheduling, shutdown, and timer/performance-counter readings.
+
+Windows batches 014-animation and 015-animation-events establish the baseline.
+The implementation matches all 757 deterministic records at 1e-12 tolerance;
+timer values are checked against each host's performance counter and advancement
+across Sleep(20), since absolute times differ between hosts. Reproduce with
+`compare-animation.py windows.log wine.log`. The eleven captured fixtures and
+callback sequences also pass 2,114 checks on both Wine and Windows (batch
+016-animation-timeline).
+
+Smooth-stop uses a parabolic stop when 2*distance/initial_velocity is positive
+and within the maximum duration, or a cubic Hermite curve otherwise. A zero
+distance finishes immediately. Native notifications skip PLAYING for zero
+duration and deliver storyboard callbacks before variable changes. Both details
+were measured independently rather than inferred from the Wine implementation.
+
+Keyframes, conflict arbitration, custom interpolators, timer update callbacks,
+other transition types, and complete pause/bounds behavior are not covered by
+this reference comparison and remain incomplete.
