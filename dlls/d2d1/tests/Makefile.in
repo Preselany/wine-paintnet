@@ -3,6 +3,7 @@ IMPORTS   = d2d1 d3d10_1 d3d11 dwrite dxguid uuid user32 advapi32 ole32 gdi32 d3
 
 SOURCES = \
 	alpha_mask.c \
+	bitmap_source.c \
 	contrast.c \
 	convolve_matrix.c \
 	d2d1.c \

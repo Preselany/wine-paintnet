@@ -335,3 +335,53 @@ Evidence outside the repository: `logs/build-contrast-tests.log`,
 `logs/contrast-stock.log`, `logs/contrast-first.log`, `logs/contrast-final.log`,
 `logs/d2d1-suite-contrast.log`, `logs/paintnet-20260911-220706-187549.log`, and
 `app/Paint.NET App Files/CrashLogs/pdncrash.9.log`.
+
+
+## Bitmap Source and empty input-list XML
+
+The new Bitmap Source case passes **7,337 checks**, including readback of complete
+8x8 float targets for the source's own extent and the untouched pixels outside it.
+Cases cover premultiplied HDR input; straight BGRA converted to premultiplied
+output; 24-bit WIC conversion; 16-bit RGBA precision; all eight orientations;
+nearest enlargement; linear enlargement/reduction; crop/offset; a source feeding
+Contrast; 192-DPI correction and pixel units; zero-width output; missing/invalid
+sources; property defaults/validation; and COM ownership. A counting WIC source
+checks that bounds queries do not copy pixels and repeated draws use the cache.
+Reassigning the source or changing properties invalidates that cache.
+
+The initial new-effect registration failed because parse_effect_inputs tested
+IsEmptyElement while still positioned on an attribute. It now returns to the
+Inputs element first. Five focused XML cases include self-closing input lists
+with neither, either, or both bounds attributes, and an explicitly closed input
+list, each followed by another property. Stock Wine fails the three self-closing
+attribute cases and then stops at missing Bitmap Source: 12 checks, four failures.
+
+All eight focused cases pass **9,927 checks, zero failures, zero skips**. The
+full suite again reports 17,151 checks, 243 todos, the same two unexpected todo
+successes, and one unavailable reference-device skip. The final build contains
+no compiler warnings or errors. The first build's missing test-header include
+was corrected before runtime validation.
+
+Limitations: only nearest/linear scaling and premultiplied output are rendered.
+Cubic, Fant, mipmap interpolation, and straight-alpha output return E_NOTIMPL.
+Unsupported WIC formats report an error instead of silently losing precision.
+The implementation currently decodes the full image and stores an RGBA32-float
+GPU bitmap, so memory use can be high for large inputs. Native Windows numeric
+and behavioral comparisons remain necessary, especially for fractional output
+bounds, DPI/pixel-unit interaction, combined rotate/flip order, and cache
+invalidation semantics. These are functional implementation regressions, not
+native conformance results or application-level performance benchmarks.
+
+References: Microsoft's [Bitmap Source description](https://learn.microsoft.com/en-us/windows/win32/direct2d/bitmap-source)
+and [SDK property/enumeration declarations](https://github.com/microsoft/win32metadata/blob/main/generation/WinSDK/RecompiledIdlHeaders/um/d2d1effects.h).
+
+Application retest verified all 312 original binaries and advanced past Bitmap
+Source to missing Emboss (`b1c5eb2b-0348-43f0-8107-4957cacba2ae`). EffectCategories
+still fails, and diagnostic generation still lacks CreatePresentationFactory.
+No successful editor startup or editing/file round trip has been observed.
+
+Evidence outside the repository: `logs/build-bitmap-source-final.log`,
+`logs/bitmap-source-registration.log`, `logs/bitmap-source-stock-final.log`,
+`logs/bitmap-source-final.log`, `logs/d2d1-suite-bitmap-source.log`,
+`logs/paintnet-20260911-222112-196386.log`, and
+`app/Paint.NET App Files/CrashLogs/pdncrash.10.log`.

@@ -845,6 +845,7 @@ static HRESULT parse_effect_inputs(IXmlReader *reader, struct d2d_effect_registr
     min_inputs = d2d_effect_properties_get_property_by_name(effect->properties, L"MinInputs");
     max_inputs = d2d_effect_properties_get_property_by_name(effect->properties, L"MaxInputs");
 
+    IXmlReader_MoveToElement(reader);
     if (!IXmlReader_IsEmptyElement(reader))
     {
         while (parse_effect_get_next_xml_node(reader, XmlNodeType_None, L"Input", &depth) == S_OK)

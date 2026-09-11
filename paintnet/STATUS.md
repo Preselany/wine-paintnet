@@ -158,9 +158,35 @@ All 312 application binaries remain unchanged. Paint.NET now passes Contrast
 metadata and next fails on Bitmap Source
 (`5fb6c24d-c6dd-4231-9404-50f4d5c3252d`). The editor still has not opened.
 
+## Seventh Wine change: Bitmap Source
+
+Bitmap Source now retains an IWICBitmapSource property and turns its decoded
+pixels into a real image in the supported effect graph. The implementation
+preserves premultiplied alpha and HDR float values, handles common 8-bit and
+16-bit source formats, performs nearest/linear CPU scaling, and applies the
+eight documented rotations/flips. DPI correction and crop/offset drawing have
+focused checks. Repeated draws reuse the decoded/uploaded bitmap until a
+property or effective context DPI changes.
+
+The first test also exposed an XML parser bug with self-closing Inputs elements
+containing attributes followed by another property. Restoring the reader to the
+element before checking whether it is empty fixes three stock-Wine failures.
+The source case passes 7,337 checks; all eight focused cases pass 9,927 checks.
+The full Direct2D suite still matches the stock baseline.
+
+Straight-alpha output, cubic/Fant/mipmap interpolation, and other WIC source
+formats remain unsupported. Exact native bounds rounding, combined orientation
+ordering, source invalidation, and DPI semantics need Windows comparison. The
+pixel and cache tests exercise this implementation and do not establish native
+conformance or full application performance.
+
+The unchanged application now passes Bitmap Source metadata. Its next missing
+effect is Emboss (`b1c5eb2b-0348-43f0-8107-4957cacba2ae`); startup still fails
+in EffectCategories. All 312 original binaries remain intact.
+
 ## Observed remaining failures
 
-* Missing Bitmap Source effect registration/implementation, now the first
+* Missing Emboss effect registration/implementation, now the first
   failing category lookup. Further builtin effects and general effect-graph evaluation
   still need implementation.
 * Retest Paint.NET's device feature probe after its effect-category initializer

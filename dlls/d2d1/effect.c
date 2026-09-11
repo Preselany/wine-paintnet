@@ -1911,6 +1911,7 @@ void d2d_effects_init_builtins(struct d2d_factory *factory)
     d2d_alpha_mask_init_builtin(factory);
     d2d_convolve_matrix_init_builtin(factory);
     d2d_contrast_init_builtin(factory);
+    d2d_bitmap_source_init_builtin(factory);
 }
 
 /* Same syntax is used for value and default values. */
@@ -3103,6 +3104,12 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
             }
             if (FAILED(hr = d2d_effect_get_value(effect, D2D1_PROPERTY_CLSID, D2D1_PROPERTY_TYPE_CLSID,
                     (BYTE *)&clsid, sizeof(clsid)))) break;
+            /* Source effects are graph leaves with property-owned input data. */
+            if (IsEqualGUID(&clsid, &CLSID_D2D1BitmapSource))
+            {
+                if (FAILED(hr = d2d_bitmap_source_evaluate(effect, context, &result, bounds_only))) break;
+                goto have_result;
+            }
             count = 1;
             if (effect->impl->lpVtbl == &opacity_metadata_vtbl) kind = EFFECT_PASSTHROUGH;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1AlphaMask)) { kind = EFFECT_ALPHA_MASK; count = 2; }
@@ -3149,6 +3156,7 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
             ID2D1Bitmap_Release(result.bitmap);
             result.bitmap = NULL;
         }
+have_result:
         for (;;)
         {
             if (!depth)
