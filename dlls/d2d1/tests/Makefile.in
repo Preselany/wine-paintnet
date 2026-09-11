@@ -5,6 +5,7 @@ SOURCES = \
 	alpha_mask.c \
 	bitmap_source.c \
 	contrast.c \
+	command_list_state.c \
 	convolve_matrix.c \
 	d2d1.c \
 	draw_transform.c \

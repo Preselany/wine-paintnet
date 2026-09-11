@@ -211,6 +211,11 @@ struct d2d_device_context
             [D2D_SAMPLER_EXTEND_MODE_COUNT]
             [D2D_SAMPLER_EXTEND_MODE_COUNT];
 
+    BOOL drawing;
+    BOOL command_list_initialized;
+    HRESULT target_error;
+    struct list command_list_entry;
+    struct list command_lists;
     struct d2d_error_state error;
     D2D1_DRAWING_STATE_DESCRIPTION1 drawing_state;
     IDWriteRenderingParams *text_rendering_params;
@@ -973,6 +978,11 @@ struct d2d_command_list
 
     ID2D1Factory *factory;
     enum d2d_command_list_state state;
+    HRESULT error;
+    struct d2d_device *device;
+    struct list contexts;
+    struct d2d_device_context *owner;
+    struct list owner_entry;
     unsigned int flags;
 
     size_t size;
@@ -984,9 +994,10 @@ struct d2d_command_list
     IUnknown **objects;
 };
 
-HRESULT d2d_command_list_create(ID2D1Factory *factory, struct d2d_command_list **command_list);
+HRESULT d2d_command_list_create(struct d2d_device *device, struct d2d_command_list **command_list);
 struct d2d_command_list *unsafe_impl_from_ID2D1CommandList(ID2D1CommandList *iface);
-void d2d_command_list_begin_draw(struct d2d_command_list *command_list, const struct d2d_device_context *context);
+void d2d_command_list_set_error(struct d2d_command_list *command_list, HRESULT error);
+void d2d_command_list_begin_draw(struct d2d_command_list *command_list, struct d2d_device_context *context);
 void d2d_command_list_set_antialias_mode(struct d2d_command_list *command_list, D2D1_ANTIALIAS_MODE mode);
 void d2d_command_list_set_primitive_blend(struct d2d_command_list *command_list,
         D2D1_PRIMITIVE_BLEND primitive_blend);

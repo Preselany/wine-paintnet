@@ -536,3 +536,36 @@ attempt. It passes checkerboard shader setup and fails in CommandList.Close
 while recording the color-button icon. Log:
 paintnet-20260912-003142-258762.log; crash: pdncrash.18.log. The shader path is
 validated independently; this application run has not yet displayed the editor.
+
+## Command-list recording and lifecycle
+
+The command_list_state test passes 8,028 checks on both Wine and Windows,
+without todos, failures, or skips. Native batch: 033-command-tests-final;
+Wine log: command-list-tests-final.log. The stock runtime executes 7,794 checks
+with 500 failures against the same regression; log:
+command-list-tests-stock-final.log. This includes expected cascades in the
+ordered record comparison, not 500 distinct bugs.
+
+Standalone measurements match 376 records, including 27 replayed images and
+6,912 RGBA channels, exactly. Seven ownership/domain scenarios add 88 matching
+records. Native batches: 029-command-list-pixels and
+032-command-context-expanded. Wine logs: command-list-pixels-final.log and
+command-context-final.log. compare-command-list.py compares these results.
+The sink uses public APIs to replay state and drawing to a bitmap; this is not
+a claim that Wine's automatic DrawImage(commandList) path works.
+
+All fifteen focused project cases pass 102,184 checks with no failures or skips
+and one existing custom-animation-factory todo. Log: command-all-focused.log.
+The broad Direct2D suite executes 17,157 checks with 237 todos and one skip;
+its only two failures remain the known unexpected todo successes (now at
+line 15659 after removing three newly passing todo markers). Log:
+d2d1-suite-command-display.log. Two earlier attempts could not create windows
+because the private Xvfb display had stopped; those were environment failures.
+The display was restored before the successful baseline comparison.
+
+The official application still verifies all 312 binaries unchanged. It now
+passes command-list closing and reaches CreateColorContext(SRGB,NULL,0), which
+returns E_NOTIMPL. Latest log: paintnet-20260912-010831-279604.log;
+crash: pdncrash.20.log. The first run showing that advance was
+paintnet-20260912-005413-271576.log / pdncrash.19.log. No working editor or file
+round trip is claimed.

@@ -9,10 +9,11 @@ managed renderer does not count toward this project's compatibility status.
 ## Current state — September 12, 2026
 
 The editor still does not open. The latest verified run passes checkerboard
-shader setup and fails in `ID2D1CommandList::Close` while recording the color
-button icon. Custom zero-input draw shaders now render real pixels, with
-75,824 focused checks passing independently on Windows and Wine. Startup,
-editing, save/reopen, native dialogs, and hardware performance remain open.
+shader setup and command-list closing, then fails in `CreateColorContext` for
+sRGB while preparing color profiles. Custom source shaders and command-list
+recording now have independent Windows/Wine regression coverage. All fifteen
+focused project cases pass 102,184 checks, with one existing animation todo.
+Startup, editing, save/reopen, native dialogs, and hardware performance remain open.
 
 ## Verified baseline — September 11, 2026
 
@@ -307,10 +308,30 @@ final target; other target formats need independent conformance coverage.
 The application advances from SetOutputBuffer to command-list closing.
 No Paint.NET editing session is yet verified.
 
+## Command-list recording and lifecycle
+
+Changing a device context's target during an active drawing session now starts
+command-list recording with the current drawing state. Rebinding captures state
+changes; repeated sessions preserve earlier commands. Closing accepts empty
+lists, detaches bound targets, and preserves errors for later use. EndDraw now
+handles command-list targets and error tags. Lists retain their device, reject a
+different resource domain, and handle competing writers without changing the
+first writer's successful EndDraw result.
+
+The same 8,028-check test passes on Windows and Wine. It compares 437 operation
+records plus 27 small images obtained by replaying the recorded commands through
+a public command sink. It covers target switching, state changes, copied brush
+values, empty/repeated closing, invalid ordering, two contexts, device domains,
+and context destruction. Automatic DrawImage(commandList) and command-list
+inputs to effect graphs remain separate, unimplemented rendering paths.
+
+Paint.NET passes this failure and next stops at sRGB color-context creation.
+The editor has still not opened.
+
 ## Observed remaining failures
 
-* `ID2D1CommandList::Close` fails while recording the color-button icon after
-  the application changes the device context's target within a drawing session.
+* `ID2D1DeviceContext::CreateColorContext` is unimplemented. The first request
+  is the standard sRGB space with no supplied ICC data, during ColorProfiles initialization.
 * General Direct2D transform graphs and remaining animation features remain open.
 * Retest Paint.NET's device feature probe after its effect-category initializer
   can finish. The EffectContext1 regression passes independently.

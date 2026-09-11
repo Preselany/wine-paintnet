@@ -6,7 +6,7 @@ source_root="$(realpath "$here/..")"
 work_root="$(realpath -e -- "${1:-$here/work}")"
 test -s "$work_root/build/include/d2d1_1.h"
 mkdir -p "$work_root/reference"
-for probe in emboss-reference emboss-grid8-reference effect-properties-reference animation-reference shader-reflection-reference draw-transform-reference; do
+for probe in emboss-reference emboss-grid8-reference effect-properties-reference animation-reference shader-reflection-reference draw-transform-reference command-list-reference command-context-reference; do
     probe_source="$probe"
     probe_flags=()
     if [[ "$probe" == emboss-grid8-reference ]]; then

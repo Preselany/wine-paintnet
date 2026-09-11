@@ -200,10 +200,13 @@ static void d2d_device_context_draw(struct d2d_device_context *render_target, en
 
 static void d2d_device_context_set_error(struct d2d_device_context *context, HRESULT code)
 {
+    struct d2d_command_list *command_list;
     WARN("code %#lx.\n", code);
     context->error.code = code;
     context->error.tag1 = context->drawing_state.tag1;
     context->error.tag2 = context->drawing_state.tag2;
+    LIST_FOR_EACH_ENTRY(command_list, &context->command_lists, struct d2d_command_list, owner_entry)
+        d2d_command_list_set_error(command_list, code);
 }
 
 static inline struct d2d_device_context *impl_from_IUnknown(IUnknown *iface)
@@ -301,6 +304,15 @@ static ULONG STDMETHODCALLTYPE d2d_device_context_inner_Release(IUnknown *iface)
         }
         if (context->d3d_state)
             ID3DDeviceContextState_Release(context->d3d_state);
+        while (!list_empty(&context->command_lists))
+        {
+            struct d2d_command_list *command_list = LIST_ENTRY(list_head(&context->command_lists),
+                    struct d2d_command_list, owner_entry);
+            list_remove(&command_list->owner_entry);
+            command_list->owner = NULL;
+        }
+        if (context->target.type == D2D_TARGET_COMMAND_LIST)
+            list_remove(&context->command_list_entry);
         if (context->target.object)
             IUnknown_Release(context->target.object);
         ID3D11Device1_Release(context->d3d_device);
@@ -1864,7 +1876,7 @@ static HRESULT STDMETHODCALLTYPE d2d_device_context_Flush(ID2D1DeviceContext6 *i
 
     FIXME("iface %p, tag1 %p, tag2 %p stub!\n", iface, tag1, tag2);
 
-    if (context->ops && context->ops->device_context_present)
+    if (context->target.type != D2D_TARGET_COMMAND_LIST && context->ops && context->ops->device_context_present)
         context->ops->device_context_present(context->outer_unknown);
 
     return S_OK;
@@ -2057,10 +2069,14 @@ static void STDMETHODCALLTYPE d2d_device_context_BeginDraw(ID2D1DeviceContext6 *
 
     TRACE("iface %p.\n", iface);
 
-    if (context->target.type == D2D_TARGET_COMMAND_LIST)
-        d2d_command_list_begin_draw(context->target.command_list, context);
-
     memset(&context->error, 0, sizeof(context->error));
+    context->drawing = TRUE;
+    if (FAILED(context->target_error)) d2d_device_context_set_error(context, context->target_error);
+    if (context->target.type == D2D_TARGET_COMMAND_LIST)
+    {
+        d2d_command_list_begin_draw(context->target.command_list, context);
+        context->command_list_initialized = TRUE;
+    }
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_device_context_EndDraw(ID2D1DeviceContext6 *iface,
@@ -2071,18 +2087,21 @@ static HRESULT STDMETHODCALLTYPE d2d_device_context_EndDraw(ID2D1DeviceContext6 
 
     TRACE("iface %p, tag1 %p, tag2 %p.\n", iface, tag1, tag2);
 
-    if (context->target.type == D2D_TARGET_COMMAND_LIST)
+    context->drawing = FALSE;
+    while (!list_empty(&context->command_lists))
     {
-        FIXME("Unimplemented for command list target.\n");
-        return E_NOTIMPL;
+        struct d2d_command_list *command_list = LIST_ENTRY(list_head(&context->command_lists),
+                struct d2d_command_list, owner_entry);
+        if (FAILED(context->error.code)) d2d_command_list_set_error(command_list, context->error.code);
+        list_remove(&command_list->owner_entry);
+        command_list->owner = NULL;
     }
-
     if (tag1)
         *tag1 = context->error.tag1;
     if (tag2)
         *tag2 = context->error.tag2;
 
-    if (context->ops && context->ops->device_context_present)
+    if (context->target.type != D2D_TARGET_COMMAND_LIST && context->ops && context->ops->device_context_present)
     {
         if (FAILED(hr = context->ops->device_context_present(context->outer_unknown)))
             context->error.code = hr;
@@ -2378,7 +2397,7 @@ static HRESULT STDMETHODCALLTYPE d2d_device_context_CreateCommandList(ID2D1Devic
 
     TRACE("iface %p, command_list %p.\n", iface, command_list);
 
-    if (SUCCEEDED(hr = d2d_command_list_create(context->factory, &object)))
+    if (SUCCEEDED(hr = d2d_command_list_create(context->device, &object)))
         *command_list = &object->ID2D1CommandList_iface;
 
     return hr;
@@ -2518,8 +2537,11 @@ static void d2d_device_context_reset_target(struct d2d_device_context *context)
     if (!context->target.object)
         return;
 
+    if (context->target.type == D2D_TARGET_COMMAND_LIST)
+        list_remove(&context->command_list_entry);
     IUnknown_Release(context->target.object);
     memset(&context->target, 0, sizeof(context->target));
+    context->command_list_initialized = FALSE;
 
     /* Note that DPI settings are kept. */
     memset(&context->desc.pixelFormat, 0, sizeof(context->desc.pixelFormat));
@@ -2544,6 +2566,7 @@ static void STDMETHODCALLTYPE d2d_device_context_SetTarget(ID2D1DeviceContext6 *
 
     if (!target)
     {
+        context->target_error = S_OK;
         d2d_device_context_reset_target(context);
         return;
     }
@@ -2560,6 +2583,7 @@ static void STDMETHODCALLTYPE d2d_device_context_SetTarget(ID2D1DeviceContext6 *
         }
 
         d2d_device_context_reset_target(context);
+        context->target_error = S_OK;
 
         /* Set sizes and pixel format. */
         context->pixel_size = bitmap_impl->pixel_size;
@@ -2584,12 +2608,34 @@ static void STDMETHODCALLTYPE d2d_device_context_SetTarget(ID2D1DeviceContext6 *
     else if (SUCCEEDED(ID2D1Image_QueryInterface(target, &IID_ID2D1CommandList, (void **)&command_list)))
     {
         command_list_impl = unsafe_impl_from_ID2D1CommandList(command_list);
+        if (command_list_impl->device != context->device)
+        {
+            ID2D1CommandList_Release(command_list);
+            context->target_error = D2DERR_WRONG_RESOURCE_DOMAIN;
+            d2d_device_context_set_error(context, context->target_error);
+            return;
+        }
+        if (command_list_impl->state == D2D_COMMAND_LIST_STATE_CLOSED || FAILED(command_list_impl->error))
+        {
+            hr = FAILED(command_list_impl->error) ? command_list_impl->error : D2DERR_WRONG_STATE;
+            ID2D1CommandList_Release(command_list);
+            context->target_error = hr;
+            d2d_device_context_set_error(context, hr);
+            return;
+        }
 
         d2d_device_context_reset_target(context);
+        context->target_error = S_OK;
 
         context->target.command_list = command_list_impl;
         context->target.object = target;
         context->target.type = D2D_TARGET_COMMAND_LIST;
+        list_add_tail(&command_list_impl->contexts, &context->command_list_entry);
+        if (context->drawing)
+        {
+            d2d_command_list_begin_draw(command_list_impl, context);
+            context->command_list_initialized = TRUE;
+        }
     }
     else
     {
@@ -4325,6 +4371,7 @@ static HRESULT d2d_device_context_init(struct d2d_device_context *render_target,
     render_target->IDWriteTextRenderer_iface.lpVtbl = &d2d_text_renderer_vtbl;
     render_target->IUnknown_iface.lpVtbl = &d2d_device_context_inner_unknown_vtbl;
     render_target->refcount = 1;
+    list_init(&render_target->command_lists);
     ID2D1Device1_GetFactory((ID2D1Device1 *)&device->ID2D1Device6_iface, &render_target->factory);
     render_target->device = device;
     ID2D1Device6_AddRef(&render_target->device->ID2D1Device6_iface);

@@ -10876,7 +10876,6 @@ static void test_command_list(BOOL d3d11)
     ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
 
     ID2D1DeviceContext_GetTarget(device_context, &target);
-    todo_wine
     ok(target == NULL, "Unexpected context target.\n");
     if (target) ID2D1Image_Release(target);
 
@@ -10890,7 +10889,6 @@ static void test_command_list(BOOL d3d11)
     ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
 
     hr = ID2D1CommandList_Close(command_list);
-    todo_wine
     ok(hr == S_OK, "Got unexpected hr %#lx.\n", hr);
 
     ID2D1CommandList_Release(command_list);
@@ -10904,7 +10902,6 @@ static void test_command_list(BOOL d3d11)
 
     ID2D1DeviceContext_SetTarget(device_context2, (ID2D1Image *)command_list);
     ID2D1DeviceContext_GetTarget(device_context2, &target);
-    todo_wine
     ok(target == NULL, "Unexpected target.\n");
     if (target) ID2D1Image_Release(target);
 

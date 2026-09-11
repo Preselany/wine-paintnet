@@ -242,3 +242,26 @@ The comparison uses an absolute pixel tolerance of 2e-5 and does not
 accept an incomplete probe. Source transforms with image inputs, custom vertex
 processing, general transform graphs, arbitrary affine transforms, non-float32
 final targets, and performance require further independent measurements.
+
+## Command-list recording and lifecycle
+
+`command-list-reference.exe` exercises 23 call sequences involving BeginDraw,
+EndDraw, target changes, state setters, drawing, closing, and streaming. A public
+ID2D1CommandSink replays the recorded state and rectangles into a separate bitmap
+context. The 27 resulting 8×8 images use exactly representable RGBA values.
+
+`command-context-reference.exe` adds seven cases for shared versus different
+Direct2D devices, competing writers, sequential reuse, multiple inactive
+bindings, and destruction of the creating context. It uses the same sink for
+record inspection without replaying across resource domains.
+
+Both programs support `D2D1_TEST_WARP=1` for the Windows software reference.
+Compare their labeled text records with:
+
+```sh
+python3 paintnet/compare-command-list.py windows.log wine.log
+```
+
+The focused command_list_state test includes the measured ordered records and
+compact palette-based pixel fixtures. It checks recording and public-sink
+replay; automatic Direct2D command-list rasterization still needs implementation.
