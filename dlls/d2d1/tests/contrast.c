@@ -47,15 +47,14 @@ START_TEST(contrast)
         {0,.25f,.5f,1}, {.75f,1,.25f,1}, {-.25f,1.25f,.5f,1}, {.125f,.25f,.375f,.5f}, {0,0,0,0},
     };
     static const UINT channels[5][3] = {{1,2,3},{4,5,2},{0,6,3},{2,3,4},{1,1,1}};
-    /* Values of the two quadratics at x = {-1/4,0,1/4,1/2,3/4,1,5/4}.
-     * The amount interpolation and extrapolation need native conformance testing. */
+    /* Windows/WARP measurements at x = {-1/4,0,1/4,1/2,3/4,1,5/4}. */
     static const float amounts[] = {-1,0,.5f,1};
     static const float transfer[4][7] =
     {
-        {-.625f,0,.375f,.5f,.625f,1,1.625f},
+        {-.53125f,0,.34375f,.5f,.65625f,1,1.53125f},
         {-.25f,0,.25f,.5f,.75f,1,1.25f},
-        {-.0625f,0,.1875f,.5f,.8125f,1,1.0625f},
-        {.125f,0,.125f,.5f,.875f,1,.875f},
+        {-.109375f,0,.203125f,.5f,.796875f,1,1.109375f},
+        {.03125f,0,.15625f,.5f,.84375f,1,.96875f},
     };
     D2D1_BITMAP_PROPERTIES1 desc = {{DXGI_FORMAT_R32G32B32A32_FLOAT, D2D1_ALPHA_MODE_PREMULTIPLIED},
             96,96,D2D1_BITMAP_OPTIONS_NONE,NULL};
@@ -104,7 +103,9 @@ START_TEST(contrast)
     ok(hr == S_OK && !clamp, "Default clamping differs.\n");
     amount = 2;
     hr = ID2D1Effect_SetValue(effect,D2D1_CONTRAST_PROP_CONTRAST,D2D1_PROPERTY_TYPE_FLOAT,(BYTE *)&amount,sizeof(amount));
-    ok(FAILED(hr), "Out-of-range amount accepted.\n");
+    ok(hr == S_OK, "Out-of-range amount returned %#lx.\n",hr);
+    hr = ID2D1Effect_GetValue(effect,D2D1_CONTRAST_PROP_CONTRAST,D2D1_PROPERTY_TYPE_FLOAT,(BYTE *)&amount,sizeof(amount));
+    ok(hr == S_OK && amount == 1, "Amount was not clamped, hr %#lx, amount %g.\n",hr,amount);
     hr = ID2D1DeviceContext_CreateBitmap(context,size,pixels,sizeof(pixels),&desc,&source);
     ok(hr == S_OK, "Source returned %#lx.\n", hr);
     if (FAILED(hr)) goto done;
@@ -155,8 +156,8 @@ START_TEST(contrast)
     ID2D1Effect_GetOutput(convolution,&convolved_image);
     ID2D1Effect_SetInput(effect,0,convolved_image,TRUE);
     hr = ID2D1DeviceContext_GetImageLocalBounds(context,image,&bounds);
-    ok(hr == S_OK && bounds.left == -1 && bounds.top == -1 && bounds.right == 6 && bounds.bottom == 2,
-            "Contrast lost the input origin, hr %#lx.\n", hr);
+    ok(hr == S_OK && bounds.left == 0 && bounds.top == 0 && bounds.right == 5 && bounds.bottom == 1,
+            "Contrast changed identity-convolution bounds, hr %#lx.\n", hr);
     hr = draw(context,image,&crop);
     ok(hr == S_OK, "Contrast after convolution returned %#lx.\n", hr);
     compare(target,readback,expected);
@@ -180,9 +181,26 @@ START_TEST(contrast)
     ID2D1Effect_SetValue(effect,D2D1_CONTRAST_PROP_CLAMP_INPUT,D2D1_PROPERTY_TYPE_BOOL,(BYTE *)&clamp,sizeof(clamp));
     ID2D1Effect_SetInput(effect,0,(ID2D1Image *)ignored,TRUE);
     memcpy(expected,pixels,sizeof(expected));
-    for (x = 0; x < 5; ++x) expected[x][3] = 1;
+    /* Effects consume texture alpha even when the bitmap was created with IGNORE. */
     hr = draw(context,image,NULL);
     ok(hr == S_OK, "Ignored-alpha contrast returned %#lx.\n", hr);
+    compare(target,readback,expected);
+    amount = 1; clamp = TRUE;
+    ID2D1Effect_SetValue(effect,D2D1_CONTRAST_PROP_CONTRAST,D2D1_PROPERTY_TYPE_FLOAT,(BYTE *)&amount,sizeof(amount));
+    ID2D1Effect_SetValue(effect,D2D1_CONTRAST_PROP_CLAMP_INPUT,D2D1_PROPERTY_TYPE_BOOL,(BYTE *)&clamp,sizeof(clamp));
+    for (x = 0; x < 5; ++x)
+    {
+        for (c = 0; c < 3; ++c)
+        {
+            index = channels[x][c];
+            if (!index) index = 1;
+            if (index == 6) index = 5;
+            expected[x][c] = transfer[3][index]*pixels[x][3];
+        }
+        expected[x][3] = pixels[x][3];
+    }
+    hr = draw(context,image,NULL);
+    ok(hr == S_OK, "Adjusted ignored-alpha contrast returned %#lx.\n",hr);
     compare(target,readback,expected);
     compare(source,readback,pixels);
 done:

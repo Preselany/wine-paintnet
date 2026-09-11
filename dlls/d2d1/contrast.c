@@ -21,12 +21,11 @@ static const char contrast_shader[] =
     "float adjust(float x) {\n"
     " if (amount == 0) return x;\n"
     " float delta = x < 0.5 ? 2*x*x-x : 3*x-2*x*x-1;\n"
-    " return x + amount * delta; }\n"
+    " return x + 0.75 * amount * delta; }\n"
     "[numthreads(16,16,1)] void main(uint3 tid : SV_DispatchThreadID) {\n"
     " if (tid.x >= extent.x || tid.y >= extent.y) return;\n"
     " float4 color = image.Load(int3(tid.xy,0));\n"
-    " if (alpha_mode == 3) color.a = 1;\n"
-    " else if (alpha_mode == 1) color.rgb = color.a != 0 ? color.rgb / color.a : 0;\n"
+    " if (alpha_mode != 2) color.rgb = color.a != 0 ? color.rgb / color.a : 0;\n"
     " if (clamp_input) color.rgb = saturate(color.rgb);\n"
     " color.rgb = float3(adjust(color.r), adjust(color.g), adjust(color.b)) * color.a;\n"
     " output_image[tid.xy] = color; }\n";
@@ -121,8 +120,8 @@ static HRESULT CALLBACK amount_set(IUnknown *iface, const BYTE *data, UINT size)
     float value;
     if (!data || size != sizeof(value)) return E_INVALIDARG;
     memcpy(&value, data, size);
-    if (!(value >= -1 && value <= 1)) return E_INVALIDARG;
-    effect->amount = value;
+    if (isnan(value)) return E_INVALIDARG;
+    effect->amount = min(max(value, -1), 1);
     return S_OK;
 }
 
@@ -145,7 +144,7 @@ void d2d_contrast_init_builtin(struct d2d_factory *factory)
     static const WCHAR description[] = L"<?xml version='1.0'?><Effect>"
         L"<Property name='DisplayName' type='string' value='Contrast'/>"
         L"<Property name='Author' type='string' value='The Wine Project'/>"
-        L"<Property name='Category' type='string' value='Color'/>"
+        L"<Property name='Category' type='string' value='Photo'/>"
         L"<Property name='Description' type='string' value='Adjusts image contrast with a piecewise quadratic curve'/>"
         L"<Inputs minimum='1' maximum='1'><Input name='Source'/></Inputs>"
         L"<Property name='Contrast' type='float' value='0'/>"

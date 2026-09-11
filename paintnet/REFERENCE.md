@@ -10,8 +10,9 @@ Direct2D DLL must come from the Windows installation, with no Wine DLL beside
 the test executable. Normal Wine test runs leave the variable unset.
 
 `build-reference.sh WORK_DIRECTORY` builds `reference/emboss-reference.exe`.
-The probe uses only public Direct2D/Direct3D APIs. It tests seven 5x5 input
-patterns, four heights, and nine directions. Each JSON line records the actual
+The probe uses only public Direct2D/Direct3D APIs. It tests eleven 5x5 input
+patterns, five heights, and nine directions at 96/192 DPI, in DIP/pixel units,
+with default and explicit 32-bit float precision. Each JSON line records the actual
 local bounds, drawing result, and a full 7x7 floating-point target readback.
 The input area is cropped to 5x5 and drawn at (1,1), leaving a visible border
 for checking the written extent. The probe contains no Emboss implementation.
@@ -96,3 +97,25 @@ Direct2D 10.0.19041.329 in a separate Wine prefix. Factory creation succeeded,
 but metadata loading failed with ERROR_RESOURCE_TYPE_NOT_FOUND for its external
 SYSTEMPROPERTIES.XML resource. That attempt produced no rendering-conformance
 evidence and is not used as a reference result.
+
+## First corrections verified against Windows
+
+The next native batch passes COM identity (28), Opacity Metadata (47), Alpha
+Mask (488), Contrast (356), and Convolve Matrix (2,286), with no skips. Wine
+passes the same rendering expectations; its COM case executes 26 checks because
+callback counts differ. All eight Wine cases total 10,743 passing checks. The
+remaining native discrepancies are Effect Context (12), Histogram (17), and
+Bitmap Source (12); they are still open.
+
+The kernel probe now checks all nine one-hot 3x3 kernels, a full kernel, and a
+zero kernel, recording both local bounds and pixels through an explicit crop.
+It also measures short kernel-property storage. Native results establish kernel
+direction and bounds trimming rather than merely testing the Wine formula.
+Short arrays can be stored; rendering arrays with a different length from the
+configured dimensions is still unsupported in this fork.
+
+The expanded Emboss run completed 2,970 cases with no drawing failures. It
+confirms that DPI changes include an internal resampling step, while pixel units
+restore the original sample grid. For the captured cases, requesting 32-bit
+float precision did not change the output. The exact implementation is still
+under development; these measurements do not establish a Wine Emboss result.

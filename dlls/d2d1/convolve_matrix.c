@@ -29,8 +29,7 @@ static const char convolve_matrix_shader[] =
     " if (border_mode == 1) p = int2(mirror(p.x, input_size.x), mirror(p.y, input_size.y));\n"
     " else if (p.x < 0 || p.y < 0 || p.x >= (int)input_size.x || p.y >= (int)input_size.y) return 0;\n"
     " float4 color = image.Load(int3(p, 0));\n"
-    " if (alpha_mode == 3) color.a = 1;\n"
-    " else if (alpha_mode == 1) color.rgb = color.a != 0 ? color.rgb / color.a : 0;\n"
+    " if (preserve_alpha) color.rgb = color.a != 0 ? color.rgb / color.a : 0;\n"
     " return color; }\n"
     "float4 sample_image(float2 p) {\n"
     " int2 base = int2(floor(p)); float2 f = frac(p);\n"
@@ -40,12 +39,12 @@ static const char convolve_matrix_shader[] =
     " if (tid.x >= extent.x || tid.y >= extent.y) return;\n"
     " float2 center = int2(tid.xy) + origin; float4 color = 0;\n"
     " for (uint y = 0; y < kernel_size.y; ++y) for (uint x = 0; x < kernel_size.x; ++x) {\n"
-    "  float2 delta = (float2(x,y) - (float2(kernel_size) - 1) * 0.5 + kernel_offset) * step_size;\n"
+    "  float2 delta = ((float2(kernel_size) - 1) * 0.5 - float2(x,y) + kernel_offset) * step_size;\n"
     "  color += sample_image(center + delta) * weights[y * kernel_size.x + x]; }\n"
     " color = color / divisor + bias;\n"
     " if (preserve_alpha) color.a = fetch(int2(center)).a;\n"
     " if (clamp_output) color = saturate(color);\n"
-    " color.rgb *= color.a; output_image[tid.xy] = color; }\n";
+    " if (preserve_alpha) color.rgb *= color.a; output_image[tid.xy] = color; }\n";
 
 static struct convolve_matrix_effect *impl_from_ID2D1EffectImpl(ID2D1EffectImpl *iface)
 {
@@ -155,8 +154,8 @@ static HRESULT CALLBACK name##_set(IUnknown *iface, const BYTE *data, UINT size)
 
 PROPERTY(unit_length, D2D1_VECTOR_2F, value.x >= 0.01f && value.x <= 100 && value.y >= 0.01f && value.y <= 100)
 PROPERTY(offset, D2D1_VECTOR_2F, value.x >= -50 && value.x <= 50 && value.y >= -50 && value.y <= 50)
-PROPERTY(size_x, UINT32, value >= 1 && value <= 100)
-PROPERTY(size_y, UINT32, value >= 1 && value <= 100)
+PROPERTY(size_x, UINT32, (value = min(max(value, 1), 100), TRUE))
+PROPERTY(size_y, UINT32, (value = min(max(value, 1), 100), TRUE))
 PROPERTY(scale_mode, UINT32, value <= D2D1_CONVOLVEMATRIX_SCALE_MODE_HIGH_QUALITY_CUBIC)
 PROPERTY(border_mode, UINT32, value <= D2D1_BORDER_MODE_HARD)
 PROPERTY(divisor, float, isfinite(value))
@@ -175,8 +174,8 @@ static HRESULT CALLBACK kernel_set(IUnknown *iface, const BYTE *data, UINT size)
 {
     struct convolve_matrix_effect *effect = impl_from_ID2D1EffectImpl((ID2D1EffectImpl *)iface);
     float *kernel;
-    UINT count = effect->size_x * effect->size_y, i;
-    if (!data || size != count * sizeof(float)) return E_INVALIDARG;
+    UINT count = size / sizeof(float), i;
+    if (!data || !size || size % sizeof(float)) return E_INVALIDARG;
     if (!(kernel = malloc(size))) return E_OUTOFMEMORY;
     memcpy(kernel, data, size);
     for (i = 0; i < count; ++i)
@@ -231,6 +230,8 @@ HRESULT d2d_convolve_matrix_bounds(struct d2d_effect *effect, struct d2d_device_
 {
     struct convolve_matrix_effect *convolve = impl_from_ID2D1EffectImpl(effect->impl);
     double step_x, step_y, half_x, half_y, left, top, right, bottom;
+    UINT x, y, min_x, min_y, max_x = 0, max_y = 0;
+    BOOL any = FALSE;
 
     if (effect->impl->lpVtbl != &convolve_matrix_vtbl) return E_UNEXPECTED;
     *output = *input;
@@ -240,10 +241,21 @@ HRESULT d2d_convolve_matrix_bounds(struct d2d_effect *effect, struct d2d_device_
     step_y = convolve->unit_length.y * (context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 1 : context->desc.dpiY / 96.0);
     half_x = (convolve->size_x - 1) * 0.5;
     half_y = (convolve->size_y - 1) * 0.5;
-    left = floor(input->left - (half_x + convolve->offset.x) * step_x);
-    top = floor(input->top - (half_y + convolve->offset.y) * step_y);
-    right = ceil(input->right + (half_x - convolve->offset.x) * step_x);
-    bottom = ceil(input->bottom + (half_y - convolve->offset.y) * step_y);
+    min_x = convolve->size_x;
+    min_y = convolve->size_y;
+    for (y = 0; y < convolve->size_y; ++y)
+        for (x = 0; x < convolve->size_x; ++x)
+            if (y * convolve->size_x + x < convolve->kernel_count && convolve->kernel[y * convolve->size_x + x] != 0)
+            {
+                min_x = min(min_x, x); min_y = min(min_y, y);
+                max_x = max(max_x, x); max_y = max(max_y, y);
+                any = TRUE;
+            }
+    /* Windows trims unused rows and columns before computing the output bounds. */
+    left = floor(input->left + (any ? min_x - half_x - convolve->offset.x : 0) * step_x);
+    top = floor(input->top + (any ? min_y - half_y - convolve->offset.y : 0) * step_y);
+    right = ceil(input->right + (any ? max_x - half_x - convolve->offset.x : half_x) * step_x);
+    bottom = ceil(input->bottom + (any ? max_y - half_y - convolve->offset.y : half_y) * step_y);
     if (left < INT_MIN || top < INT_MIN || right > INT_MAX || bottom > INT_MAX)
         return D2DERR_EXCEEDS_MAX_BITMAP_SIZE;
     output->left = left;

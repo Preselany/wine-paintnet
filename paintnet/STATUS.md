@@ -194,6 +194,24 @@ checks on Windows. Pixel, property-clamping, bounds, and cache differences in
 other cases remain under correction. See REFERENCE.md for the recorded baseline.
 The original Paint.NET application still fails before opening the editor.
 
+## Corrections from the Windows reference
+
+Contrast now uses the measured 0.75 curve coefficient and clamps its amount
+property. Alpha Mask and Contrast consume stored input alpha even for bitmaps
+created with IGNORE alpha mode. Opacity Metadata defaults to actual infinities.
+Invalid graph inputs now return the measured graph-configuration error.
+
+Convolve Matrix now reverses kernel tap coordinates, trims unused rows/columns
+when computing bounds, and filters premultiplied RGBA when PreserveAlpha is
+false. Its PreserveAlpha path filters straight RGB and premultiplies afterward.
+DrawImage preserves negative image origins unless an explicit crop supplies a
+new origin. One-hot kernel pixel tests verify these distinctions on Windows.
+
+Those four effects now have matching passing focused cases on Wine and Windows.
+The full Wine drawing suite retains its recorded baseline, and the lookup
+upload diagnostic still passes. Histogram, Bitmap Source, and effect-context
+conformance differences remain; see REFERENCE.md. Emboss is still unimplemented.
+
 ## Observed remaining failures
 
 * Missing Emboss effect registration/implementation, now the first

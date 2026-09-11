@@ -18,11 +18,15 @@ static void pattern(float data[25][4], unsigned int kind)
         {
             float value = x == 2 && y == 2 ? 1 : 0;
             data[y*5+x][3] = kind == 6 ? (y+1)/5.0f : 1;
+            if (kind == 9) data[y*5+x][3] = value;
+            if (kind == 7) value = !x && !y ? 1 : 0;
             for (c = 0; c < 3; ++c)
             {
                 if (kind == 1 || kind == 6) data[y*5+x][c] = x/4.0f;
                 else if (kind == 2) data[y*5+x][c] = y/4.0f;
-                else if (kind >= 3) data[y*5+x][c] = c == kind-3 ? value : 0;
+                else if (kind >= 3 && kind <= 5) data[y*5+x][c] = c == kind-3 ? value : 0;
+                else if (kind == 8) data[y*5+x][c] = x*.75f-1;
+                else if (kind == 10) data[y*5+x][c] = ((int)((x*13+y*7+c*11)%19)-4)/10.0f;
                 else data[y*5+x][c] = value;
                 data[y*5+x][c] *= data[y*5+x][3];
             }
@@ -33,8 +37,9 @@ static void pattern(float data[25][4], unsigned int kind)
 
 int main(void)
 {
-    static const char *names[] = {"impulse","ramp-x","ramp-y","red-impulse","green-impulse","blue-impulse","alpha"};
-    static const float heights[] = {0,.125f,1,2};
+    static const char *names[] = {"impulse","ramp-x","ramp-y","red-impulse","green-impulse","blue-impulse","alpha",
+            "corner-impulse","hdr-ramp","transparent-impulse","mixed"};
+    static const float heights[] = {0,.125f,1,2,10};
     ID2D1Factory1 *factory = NULL;
     ID3D11Device *d3d = NULL;
     IDXGIDevice *dxgi = NULL;
@@ -47,12 +52,12 @@ int main(void)
             96,96,D2D1_BITMAP_OPTIONS_NONE,NULL};
     const D2D1_SIZE_U source_size = {5,5}, target_size = {7,7};
     const D2D1_COLOR_F clear = {0};
-    const D2D1_RECT_F crop = {0,0,5,5};
-    const D2D1_POINT_2F offset = {1,1};
+    D2D1_RECT_F crop;
+    D2D1_POINT_2F offset;
     D2D1_RECT_F bounds = {0};
     D2D1_MAPPED_RECT mapped;
-    unsigned int p,h,angle,x,y,c;
-    float data[25][4], direction, pixel;
+    unsigned int config,p,h,angle,x,y,c,precision,unit_mode;
+    float data[25][4], direction, pixel,dpi,unit_scale;
     HRESULT hr = S_OK, bounds_hr, draw_hr;
 
     CoInitializeEx(NULL,COINIT_MULTITHREADED);
@@ -71,6 +76,17 @@ int main(void)
     ID2D1DeviceContext_SetTarget(context,(ID2D1Image *)target);
     ID2D1Effect_SetInput(effect,0,(ID2D1Image *)source,TRUE);
     ID2D1Effect_GetOutput(effect,&image);
+    for (config = 0; config < 6; ++config)
+    {
+    dpi = config < 2 ? 96 : 192;
+    unit_mode = config >= 4 ? D2D1_UNIT_MODE_PIXELS : D2D1_UNIT_MODE_DIPS;
+    precision = config % 2 ? D2D1_BUFFER_PRECISION_32BPC_FLOAT : D2D1_BUFFER_PRECISION_UNKNOWN;
+    ID2D1DeviceContext_SetDpi(context,dpi,dpi);
+    ID2D1DeviceContext_SetUnitMode(context,unit_mode);
+    CHECK(ID2D1Effect_SetValue(effect,D2D1_PROPERTY_PRECISION,D2D1_PROPERTY_TYPE_ENUM,(const BYTE *)&precision,sizeof(precision)));
+    unit_scale = unit_mode == D2D1_UNIT_MODE_PIXELS ? 1 : dpi/96;
+    crop = (D2D1_RECT_F){0,0,5/unit_scale,5/unit_scale};
+    offset = (D2D1_POINT_2F){1/unit_scale,1/unit_scale};
     for (p = 0; p < sizeof(names)/sizeof(names[0]); ++p)
     {
         pattern(data,p);
@@ -89,9 +105,9 @@ int main(void)
                 draw_hr = ID2D1DeviceContext_EndDraw(context,NULL,NULL);
                 CHECK(ID2D1Bitmap1_CopyFromBitmap(readback,NULL,(ID2D1Bitmap *)target,NULL));
                 CHECK(ID2D1Bitmap1_Map(readback,D2D1_MAP_OPTIONS_READ,&mapped));
-                printf("{\"pattern\":\"%s\",\"height\":%.9g,\"direction\":%u,\"bounds_hr\":%ld,"
+                printf("{\"dpi\":%g,\"unit_mode\":%u,\"precision\":%u,\"pattern\":\"%s\",\"height\":%.9g,\"direction\":%u,\"bounds_hr\":%ld,"
                         "\"bounds\":[%.9g,%.9g,%.9g,%.9g],\"draw_hr\":%ld,\"pixels\":[",
-                        names[p],heights[h],angle,bounds_hr,bounds.left,bounds.top,bounds.right,bounds.bottom,draw_hr);
+                        dpi,unit_mode,precision,names[p],heights[h],angle,bounds_hr,bounds.left,bounds.top,bounds.right,bounds.bottom,draw_hr);
                 for (y = 0; y < 7; ++y)
                     for (x = 0; x < 7; ++x)
                     {
@@ -107,6 +123,7 @@ int main(void)
                 puts("]}");
                 ID2D1Bitmap1_Unmap(readback);
             }
+    }
     }
 done:
     if (context) ID2D1DeviceContext_SetTarget(context,NULL);

@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 #define COBJMACROS
-#include <float.h>
+#include <math.h>
 #include "d2d1_1.h"
 #include "d2d1effects.h"
 #include "d3d11.h"
@@ -80,7 +80,7 @@ START_TEST(opacity_metadata)
     if (FAILED(hr)) goto cleanup;
     hr = ID2D1Effect_GetValue(effect, D2D1_OPACITYMETADATA_PROP_INPUT_OPAQUE_RECT,
             D2D1_PROPERTY_TYPE_VECTOR4, (BYTE *)&value, sizeof(value));
-    ok(hr == S_OK && value.x == -FLT_MAX && value.y == -FLT_MAX && value.z == FLT_MAX && value.w == FLT_MAX,
+    ok(hr == S_OK && value.x == -INFINITY && value.y == -INFINITY && value.z == INFINITY && value.w == INFINITY,
             "Default opaque rectangle {%g,%g,%g,%g} differs, hr %#lx.\n",value.x,value.y,value.z,value.w,hr);
     hr = ID2D1Effect_SetValue(effect, D2D1_OPACITYMETADATA_PROP_INPUT_OPAQUE_RECT,
             D2D1_PROPERTY_TYPE_VECTOR4, (const BYTE *)&opaque_rect, sizeof(opaque_rect));

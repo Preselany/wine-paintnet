@@ -214,11 +214,11 @@ START_TEST(alpha_mask)
     ID2D1Effect_SetInput(effect, 1, (ID2D1Image *)ignored, TRUE);
     hr = draw(context, image, target, NULL, NULL);
     ok(hr == S_OK, "Ignore-alpha mask draw returned %#lx.\n", hr);
-    check_pixels(target, readback, colors);
+    check_pixels(target, readback, masked);
     ID2D1Effect_SetInput(effect, 0, (ID2D1Image *)ignored, TRUE);
     ID2D1Effect_SetInput(effect, 1, (ID2D1Image *)mask, TRUE);
     for (i = 0; i < 8; ++i)
-        for (c = 0; c < 4; ++c) expected[i][c] = (c == 3 ? 1 : masks[i][c]) * masks[i][3];
+        for (c = 0; c < 4; ++c) expected[i][c] = masks[i][c] * masks[i][3];
     hr = draw(context, image, target, NULL, NULL);
     ok(hr == S_OK, "Ignore-alpha destination draw returned %#lx.\n", hr);
     check_pixels(target, readback, expected);
@@ -259,10 +259,10 @@ START_TEST(alpha_mask)
     ok(hr == D2DERR_CYCLIC_GRAPH, "Cycle bounds returned %#lx.\n", hr);
     ID2D1Effect_SetInput(effect, 1, NULL, TRUE);
     hr = draw(context, image, target, NULL, NULL);
-    ok(hr == D2DERR_WRONG_STATE, "Missing input returned %#lx.\n", hr);
+    ok(hr == D2DERR_INVALID_GRAPH_CONFIGURATION, "Missing input returned %#lx.\n", hr);
     ID2D1Effect_SetInput(effect, 1, (ID2D1Image *)readback, TRUE);
     hr = draw(context, image, target, NULL, NULL);
-    ok(hr == D2DERR_BITMAP_CANNOT_DRAW, "Unreadable input returned %#lx.\n", hr);
+    ok(hr == D2DERR_INVALID_GRAPH_CONFIGURATION, "Unreadable input returned %#lx.\n", hr);
     ID2D1Effect_SetInput(effect, 1, (ID2D1Image *)target, TRUE);
     hr = draw(context, image, target, NULL, NULL);
     ok(hr == D2DERR_BITMAP_BOUND_AS_TARGET, "Target input returned %#lx.\n", hr);

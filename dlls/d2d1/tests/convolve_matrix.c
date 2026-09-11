@@ -136,10 +136,15 @@ START_TEST(convolve_matrix)
     value = 0;
     hr = ID2D1Effect_SetValue(effect, D2D1_CONVOLVEMATRIX_PROP_KERNEL_SIZE_X, D2D1_PROPERTY_TYPE_UINT32,
             (const BYTE *)&value, sizeof(value));
-    ok(FAILED(hr), "Zero-sized kernel accepted.\n");
+    ok(hr == S_OK, "Zero-sized kernel returned %#lx.\n",hr);
+    hr = ID2D1Effect_GetValue(effect,D2D1_CONVOLVEMATRIX_PROP_KERNEL_SIZE_X,D2D1_PROPERTY_TYPE_UINT32,
+            (BYTE *)&value,sizeof(value));
+    ok(hr == S_OK && value == 1, "Kernel width was not clamped, hr %#lx, width %u.\n",hr,value);
     hr = ID2D1Effect_SetValue(effect, D2D1_CONVOLVEMATRIX_PROP_KERNEL_MATRIX, D2D1_PROPERTY_TYPE_BLOB,
             (const BYTE *)&single, sizeof(single));
-    ok(FAILED(hr), "Truncated kernel accepted.\n");
+    ok(hr == S_OK, "Short kernel property returned %#lx.\n",hr);
+    ok(ID2D1Effect_GetValueSize(effect,D2D1_CONVOLVEMATRIX_PROP_KERNEL_MATRIX) == sizeof(float),
+            "Short kernel property size differs.\n");
     value = 3;
     hr = ID2D1Effect_SetValue(effect,D2D1_CONVOLVEMATRIX_PROP_KERNEL_SIZE_X,D2D1_PROPERTY_TYPE_UINT32,
             (const BYTE *)&value,sizeof(value));
@@ -166,13 +171,31 @@ START_TEST(convolve_matrix)
     ID2D1DeviceContext_SetTarget(context, (ID2D1Image *)target);
     ID2D1Effect_SetInput(effect, 0, (ID2D1Image *)source, TRUE);
     ID2D1Effect_GetOutput(effect, &image);
-    check_bounds(context, image, -1,-1,4,3);
+    /* Native one-hot kernels move the image by the tap's position relative to
+     * the center. An explicit crop makes negative origins visible in readback. */
+    for (i = 0; i < 9; ++i)
+    {
+        D2D1_RECT_F full_crop = {-1,-1,4,3};
+        winetest_push_context("one-hot %u",i);
+        memset(matrix,0,sizeof(matrix)); matrix[i] = 1;
+        set_kernel(effect,3,3,matrix);
+        check_bounds(context,image,(int)(i%3)-1,(int)(i/3)-1,2+i%3,1+i/3);
+        memset(expected,0,sizeof(expected));
+        for (y = 0; y < 2; ++y)
+            for (x = 0; x < 3; ++x) memcpy(expected[(y+i/3)*5+x+i%3],pixels[y*3+x],sizeof(pixels[0]));
+        hr = draw(context,image,NULL,&full_crop);
+        ok(hr == S_OK, "One-hot draw returned %#lx.\n",hr);
+        compare(target,readback,expected);
+        winetest_pop_context();
+    }
+    set_kernel(effect,3,3,identity);
+    check_bounds(context, image, 0,0,3,2);
     for (pass = 0; pass < 3; ++pass)
     {
         winetest_push_context("identity/crop %u", pass);
         memset(expected, 0, sizeof(expected));
         for (y = 0; y < 2; ++y)
-            for (x = 0; x < 3; ++x) memcpy(expected[(y+1)*5+x+1], pixels[y*3+x], sizeof(pixels[0]));
+            for (x = 0; x < 3; ++x) memcpy(expected[(y+(pass == 1))*5+x+(pass == 1)], pixels[y*3+x], sizeof(pixels[0]));
         hr = draw(context, image, pass == 1 ? &target_offset : NULL, pass == 2 ? &inverted : pass == 1 ? &crop : NULL);
         ok(hr == S_OK, "Identity draw returned %#lx.\n", hr);
         compare(target, readback, expected);
@@ -213,10 +236,10 @@ START_TEST(convolve_matrix)
         check_bounds(context, image, pass ? 0 : -1,0,pass ? 3 : 4,2);
         memset(expected, 0, sizeof(expected));
         for (y = 0; y < 2; ++y)
-            for (x = 0; x < (pass ? 3 : 5); ++x)
+            for (x = 0; x < (pass ? 3 : 4); ++x)
             {
-                float alpha = pass ? 1 : soft_alpha[x]/3;
-                for (c = 0; c < 3; ++c) expected[y*5+x][c] = (pass ? hard_color[x] : soft_color[x])/3 * alpha;
+                float alpha = pass ? 1 : soft_alpha[x+1]/3;
+                for (c = 0; c < 3; ++c) expected[y*5+x][c] = (pass ? hard_color[x] : soft_color[x+1])/3;
                 expected[y*5+x][3] = alpha;
             }
         hr = draw(context, image, NULL, NULL);
@@ -231,7 +254,7 @@ START_TEST(convolve_matrix)
     for (y = 0; y < 2; ++y)
         for (x = 0; x < 3; ++x)
         {
-            static const float difference[] = {.2f,.6f,.4f};
+            static const float difference[] = {-.2f,-.6f,-.4f};
             for (c = 0; c < 3; ++c) expected[y*5+x][c] = difference[x];
             expected[y*5+x][3] = 1;
         }
@@ -254,7 +277,7 @@ START_TEST(convolve_matrix)
     ID2D1Effect_SetValue(effect, D2D1_CONVOLVEMATRIX_PROP_KERNEL_OFFSET, D2D1_PROPERTY_TYPE_VECTOR2,
             (const BYTE *)&vector, sizeof(vector));
 
-    /* Filter straight RGB, preserve or filter alpha, then clamp before premultiplication. */
+    /* PreserveAlpha filters straight RGB. Otherwise the kernel filters stored RGBA. */
     for (i = 0; i < 6; ++i)
     {
         pixels[i][3] = (i+1)/8.0f;
@@ -276,7 +299,11 @@ START_TEST(convolve_matrix)
             {
                 float alpha = pass ? 2*pixels[y*3+x][3]+.25f : pixels[y*3+x][3];
                 if (pass == 2 && alpha > 1) alpha = 1;
-                for (c = 0; c < 3; ++c) expected[y*5+x][c] = (pass == 2 ? 1 : 1.75f)*alpha;
+                for (c = 0; c < 3; ++c)
+                {
+                    float color = pass ? 2*pixels[y*3+x][c]+.25f : 1.75f*alpha;
+                    expected[y*5+x][c] = pass == 2 && color > 1 ? 1 : color;
+                }
                 expected[y*5+x][3] = alpha;
             }
         hr = draw(context, image, NULL, NULL);
@@ -285,7 +312,7 @@ START_TEST(convolve_matrix)
         winetest_pop_context();
     }
 
-    /* A negative-origin convolution feeding a mask must stay aligned with its source. */
+    /* A convolution feeding a mask must stay aligned with its source. */
     set_kernel(effect, 3,3,identity);
     set_float(effect, D2D1_CONVOLVEMATRIX_PROP_BIAS, 0);
     set_uint(effect, D2D1_CONVOLVEMATRIX_PROP_CLAMP_OUTPUT, D2D1_PROPERTY_TYPE_BOOL, FALSE);
@@ -310,7 +337,7 @@ START_TEST(convolve_matrix)
     if (FAILED(hr)) goto done;
     ID2D1Effect_SetInput(outer, 0, image, TRUE);
     ID2D1Effect_GetOutput(outer, &outer_image);
-    check_bounds(context, outer_image, -2,-2,5,4);
+    check_bounds(context, outer_image, 0,0,3,2);
     memset(expected, 0, sizeof(expected));
     for (y = 0; y < 2; ++y)
         for (x = 0; x < 3; ++x) memcpy(expected[y*5+x], pixels[y*3+x], sizeof(pixels[0]));
@@ -347,7 +374,7 @@ START_TEST(convolve_matrix)
             (const BYTE *)&vector, sizeof(vector));
     ok(hr == S_OK, "Half-DIP kernel unit returned %#lx.\n", hr);
     ID2D1DeviceContext_SetDpi(context, 192,192);
-    check_bounds(context, image, -.5f,-.5f,2,1.5f);
+    check_bounds(context, image, 0,0,1.5f,1);
     crop.right = 1.5f; crop.bottom = 1;
     hr = draw(context, image, NULL, &crop);
     ok(hr == S_OK, "192-DPI convolution returned %#lx.\n", hr);
@@ -356,7 +383,7 @@ START_TEST(convolve_matrix)
     vector.x = vector.y = 1;
     ID2D1Effect_SetValue(effect, D2D1_CONVOLVEMATRIX_PROP_KERNEL_UNIT_LENGTH, D2D1_PROPERTY_TYPE_VECTOR2,
             (const BYTE *)&vector, sizeof(vector));
-    check_bounds(context, image, -1,-1,4,3);
+    check_bounds(context, image, 0,0,3,2);
     crop.right = 3; crop.bottom = 2;
     hr = draw(context, image, NULL, &crop);
     ok(hr == S_OK, "Pixel-unit convolution returned %#lx.\n", hr);

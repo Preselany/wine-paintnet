@@ -2747,8 +2747,11 @@ static void STDMETHODCALLTYPE d2d_device_context_DrawImage(ID2D1DeviceContext6 *
             source.bottom = min(source.bottom, requested.bottom);
             if (source.left < source.right && source.top < source.bottom)
             {
-                offset.x += source.left - requested.left;
-                offset.y += source.top - requested.top;
+                /* With no explicit crop, image coordinates keep their origin. */
+                BOOL cropped = image_rect && image_rect->left <= image_rect->right
+                        && image_rect->top <= image_rect->bottom;
+                offset.x += source.left - (cropped ? requested.left : 0);
+                offset.y += source.top - (cropped ? requested.top : 0);
                 source.left -= resolved.rect.left * scale_x;
                 source.right -= resolved.rect.left * scale_x;
                 source.top -= resolved.rect.top * scale_y;

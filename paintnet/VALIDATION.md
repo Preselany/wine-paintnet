@@ -399,3 +399,20 @@ Restoring valid state after numeric validation and adding required custom
 property DisplayName metadata prevents cascading native test failures. The
 updated tests retain 9,931 passing checks on Wine with no skips. The reference
 tools build with -Wall -Wextra -Werror. No implementation changed in this step.
+
+## Native color, alpha, and convolution corrections
+
+Windows/WARP now passes Contrast 356, Alpha Mask 488, Opacity Metadata 47,
+and Convolve Matrix 2,286 checks, including the new nine one-hot kernel cases.
+The same rendering cases pass on Wine. All eight Wine cases total 10,743 checks,
+with zero failures/skips. Logs: native-color-convolution-wine.log and the native
+009-native-color-convolution result batch in the separate work directory.
+
+The full existing Direct2D suite executes 17,151 checks, 243 todos, the same two
+unexpected todo successes at d2d1.c:15662, and one reference-device skip as the
+stock baseline. The texture-upload diagnostic compares 120 rows with no errors.
+No new upstream-suite failure was observed. Logs:
+d2d1-suite-native-color-convolution.log and upload-native-color-convolution.log.
+
+The initial build needed the math header for the infinity test; the final build
+completed without warnings. No application binary was modified.

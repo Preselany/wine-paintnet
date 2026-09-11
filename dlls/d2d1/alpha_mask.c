@@ -21,9 +21,8 @@ static const char alpha_mask_shader[] =
     "[numthreads(16,16,1)] void main(uint3 tid : SV_DispatchThreadID) {\n"
     " if (tid.x >= extent.x || tid.y >= extent.y) return;\n"
     " float4 color = destination.Load(int3(int2(tid.xy) + destination_offset, 0));\n"
-    " if (destination_alpha == 3) color.a = 1;\n"
-    " else if (destination_alpha == 2) color.rgb *= color.a;\n"
-    " float alpha = mask_alpha == 3 ? 1 : mask.Load(int3(int2(tid.xy) + mask_offset, 0)).a;\n"
+    " if (destination_alpha == 2) color.rgb *= color.a;\n"
+    " float alpha = mask.Load(int3(int2(tid.xy) + mask_offset, 0)).a;\n"
     " output_image[tid.xy] = color * alpha;\n"
     "}\n";
 

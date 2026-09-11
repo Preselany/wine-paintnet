@@ -1808,7 +1808,7 @@ static HRESULT __stdcall scale_factory(IUnknown **effect)
 static const WCHAR opacity_metadata_description[] = L"<?xml version='1.0'?><Effect>"
     L"<Property name='DisplayName' type='string' value='Opacity Metadata'/>"
     L"<Property name='Author' type='string' value='The Wine Project'/>"
-    L"<Property name='Category' type='string' value='Utility'/>"
+    L"<Property name='Category' type='string' value='Color'/>"
     L"<Property name='Description' type='string' value='Annotates the opaque region of an input image'/>"
     L"<Inputs minimum='1' maximum='1'><Input name='Source'/></Inputs>"
     L"<Property name='InputOpaqueRect' type='vector4'/></Effect>";
@@ -1850,7 +1850,7 @@ static HRESULT CALLBACK opacity_metadata_factory(IUnknown **effect)
 {
     static const struct opacity_metadata_properties properties =
     {
-        {-FLT_MAX, -FLT_MAX, FLT_MAX, FLT_MAX},
+        {-INFINITY, -INFINITY, INFINITY, INFINITY},
     };
     HRESULT hr;
 
@@ -3129,7 +3129,7 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
                 if (!effect->inputs[j]) break;
             if (j != count)
             {
-                hr = D2DERR_WRONG_STATE;
+                hr = D2DERR_INVALID_GRAPH_CONFIGURATION;
                 break;
             }
             if (!d2d_array_reserve((void **)&frames, &capacity, depth + 1, sizeof(*frames)))
@@ -3147,6 +3147,11 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
         }
         {
             D2D1_SIZE_U size = ID2D1Bitmap_GetPixelSize(result.bitmap);
+            if (effect_image && (unsafe_impl_from_ID2D1Bitmap(result.bitmap)->options & D2D1_BITMAP_OPTIONS_CANNOT_DRAW))
+            {
+                hr = D2DERR_INVALID_GRAPH_CONFIGURATION;
+                break;
+            }
             result.rect.left = result.rect.top = 0;
             result.rect.right = size.width;
             result.rect.bottom = size.height;

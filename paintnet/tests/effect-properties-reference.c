@@ -94,6 +94,76 @@ static void numeric_validation(ID2D1Effect *effect, const WCHAR *guid)
     }
 }
 
+static void convolution_geometry(ID2D1DeviceContext *context, ID2D1Effect *effect, const WCHAR *guid)
+{
+    D2D1_BITMAP_PROPERTIES1 desc = {{DXGI_FORMAT_R32G32B32A32_FLOAT,D2D1_ALPHA_MODE_PREMULTIPLIED},96,96,0,NULL};
+    D2D1_SIZE_U size = {3,2}, target_size = {5,4};
+    D2D1_RECT_F bounds = {0};
+    D2D1_RECT_F crop = {-1,-1,4,3};
+    D2D1_POINT_2F offset = {0};
+    D2D1_COLOR_F clear = {0};
+    D2D1_MAPPED_RECT mapped;
+    ID2D1Bitmap1 *bitmap, *target = NULL, *readback = NULL;
+    ID2D1Image *image;
+    float pixels[6][4] = {{0}}, matrix[16];
+    UINT32 i, j, x, y, width = 3, bytes;
+    HRESULT hr, set_hr, draw_hr;
+    for (i = 0; i < 6; ++i)
+    {
+        pixels[i][0] = pixels[i][1] = pixels[i][2] = (i+1)/10.0f;
+        pixels[i][3] = 1;
+    }
+    if (FAILED(ID2D1DeviceContext_CreateBitmap(context,size,pixels,3*16,&desc,&bitmap))) return;
+    desc.bitmapOptions = D2D1_BITMAP_OPTIONS_TARGET;
+    if (FAILED(ID2D1DeviceContext_CreateBitmap(context,target_size,NULL,0,&desc,&target))) goto done;
+    desc.bitmapOptions = D2D1_BITMAP_OPTIONS_CPU_READ | D2D1_BITMAP_OPTIONS_CANNOT_DRAW;
+    if (FAILED(ID2D1DeviceContext_CreateBitmap(context,target_size,NULL,0,&desc,&readback))) goto done;
+    ID2D1DeviceContext_SetTarget(context,(ID2D1Image *)target);
+    ID2D1Effect_SetInput(effect,0,(ID2D1Image *)bitmap,TRUE);
+    ID2D1Effect_SetValue(effect,2,D2D1_PROPERTY_TYPE_UINT32,(const BYTE *)&width,sizeof(width));
+    ID2D1Effect_SetValue(effect,3,D2D1_PROPERTY_TYPE_UINT32,(const BYTE *)&width,sizeof(width));
+    ID2D1Effect_GetOutput(effect,&image);
+    for (i = 0; i < 11; ++i)
+    {
+        for (j = 0; j < 9; ++j) matrix[j] = i == 9 || i == j ? 1 : 0;
+        set_hr = ID2D1Effect_SetValue(effect,4,D2D1_PROPERTY_TYPE_BLOB,(const BYTE *)matrix,9*sizeof(float));
+        hr = ID2D1DeviceContext_GetImageLocalBounds(context,image,&bounds);
+        ID2D1DeviceContext_BeginDraw(context);
+        ID2D1DeviceContext_Clear(context,&clear);
+        ID2D1DeviceContext_DrawImage(context,image,&offset,&crop,D2D1_INTERPOLATION_MODE_NEAREST_NEIGHBOR,D2D1_COMPOSITE_MODE_SOURCE_OVER);
+        draw_hr = ID2D1DeviceContext_EndDraw(context,NULL,NULL);
+        printf("{\"effect\":"); quoted(guid);
+        printf(",\"parent\":\"geometry\",\"kernel\":%u,\"set_hr\":%ld,\"hr\":%ld,\"bounds\":[%g,%g,%g,%g],\"draw_hr\":%ld,\"pixels\":[",
+                i,set_hr,hr,bounds.left,bounds.top,bounds.right,bounds.bottom,draw_hr);
+        if (SUCCEEDED(ID2D1Bitmap1_CopyFromBitmap(readback,NULL,(ID2D1Bitmap *)target,NULL))
+                && SUCCEEDED(ID2D1Bitmap1_Map(readback,D2D1_MAP_OPTIONS_READ,&mapped)))
+        {
+            for (y = 0; y < 4; ++y) for (x = 0; x < 5; ++x)
+            {
+                const float *pixel = (const float *)(mapped.bits+y*mapped.pitch+x*16);
+                printf("%s[%g,%g]",x || y ? "," : "",pixel[0],pixel[3]);
+            }
+            ID2D1Bitmap1_Unmap(readback);
+        }
+        puts("]}");
+    }
+    for (i = 0; i <= 10; ++i)
+    {
+        for (j = 0; j < 16; ++j) matrix[j] = j+1;
+        set_hr = ID2D1Effect_SetValue(effect,4,D2D1_PROPERTY_TYPE_BLOB,(const BYTE *)matrix,i*sizeof(float));
+        bytes = ID2D1Effect_GetValueSize(effect,4);
+        printf("{\"effect\":"); quoted(guid);
+        printf(",\"parent\":\"kernel-size\",\"count\":%u,\"set_hr\":%ld,\"bytes\":%u}\n",i,set_hr,bytes);
+    }
+    ID2D1Image_Release(image);
+    ID2D1Effect_SetInput(effect,0,NULL,TRUE);
+done:
+    ID2D1DeviceContext_SetTarget(context,NULL);
+    if (readback) ID2D1Bitmap1_Release(readback);
+    if (target) ID2D1Bitmap1_Release(target);
+    ID2D1Bitmap1_Release(bitmap);
+}
+
 int main(void)
 {
     ID2D1Factory1 *factory;
@@ -135,6 +205,7 @@ int main(void)
                 case 0x5fb6c24d: case 0x881db7d0:
                     numeric_validation(effect,guid);
             }
+            if (effects[i].Data1 == 0x407f8c08) convolution_geometry(context,effect,guid);
             ID2D1Effect_Release(effect);
         }
     }
