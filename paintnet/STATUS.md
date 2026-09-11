@@ -255,10 +255,27 @@ is in ComputeSharp.D2D1ReflectionServices.GetShaderInfo while creating the
 checkerboard effect. Wine's shader-reflection GetMinFeatureLevel remains a
 stub; GetRequiresFlags also returns a placeholder. The editor is not usable.
 
+## Shader reflection requirements
+
+Wine's shared shader reflection now reports minimum feature levels for shader
+models 4.0, 4.1 and 5.0, including the legacy 9.1/9.3 profiles. Required feature
+bits come from both shader declarations and SFI0 metadata, including doubles,
+early depth/stencil, minimum precision and optional shader extensions.
+
+Eighteen Windows-compiled shaders pass all 72 checks on Wine and Windows. The
+existing reflection suite passes 1,348 checks on both stock and modified Wine.
+All thirteen focused project cases execute 18,332 checks without failure or
+skips (one pre-existing custom-animation-factory todo remains).
+
+Paint.NET now passes shader inspection. Its next failure is
+ID2D1RenderInfo.SetOutputBuffer while configuring its checkerboard draw transform.
+Custom transform rendering must be implemented alongside that state API; simply
+accepting the call would not produce a correct image. No editor is usable yet.
+
 ## Observed remaining failures
 
-* Shader reflection fails during the custom checkerboard effect's initialization.
-  Minimum feature-level and shader-requirement reporting need implementation.
+* ID2D1RenderInfo.SetOutputBuffer fails during the checkerboard effect's
+  initialization. Output format state and custom transform rendering need work.
 * General Direct2D transform graphs and remaining animation features remain open.
 * Retest Paint.NET's device feature probe after its effect-category initializer
   can finish. The EffectContext1 regression passes independently.

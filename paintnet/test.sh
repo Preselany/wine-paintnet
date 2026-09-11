@@ -4,14 +4,15 @@ set -euo pipefail
 here="$(cd -- "$(dirname -- "$0")" && pwd)"
 work_root="$(realpath -e -- "${1:-$here/work}")"
 if [[ $# -gt 0 ]]; then shift; fi
-if [[ $# == 0 ]]; then set -- effect_identity effect_context histogram opacity_metadata alpha_mask convolve_matrix contrast bitmap_source emboss opacity timeline uianimation; fi
+if [[ $# == 0 ]]; then set -- effect_identity effect_context histogram opacity_metadata alpha_mask convolve_matrix contrast bitmap_source emboss opacity timeline uianimation requirements; fi
 export WINEPREFIX="$work_root/prefix" WINEDEBUG="${WINEDEBUG:--all}"
 export DXVK_LOG_LEVEL="${DXVK_LOG_LEVEL:-error}"
-export WINEDLLOVERRIDES='d2d1=b;uianimation=b;d3d11=n;d3d10core=n;dxgi=n;mshtml='
+export WINEDLLOVERRIDES='d2d1=b;uianimation=b;wined3d=b;d3dcompiler_47=b;d3d11=n;d3d10core=n;dxgi=n;mshtml='
 result=0
 for test_name in "$@"; do
     module=d2d1
     if [[ "$test_name" == timeline || "$test_name" == uianimation ]]; then module=uianimation; fi
+    if [[ "$test_name" == requirements || "$test_name" == reflection ]]; then module=d3dcompiler_47; fi
     if ! "$work_root/wine/opt/wine-devel/bin/wine" \
         "$work_root/build/dlls/$module/tests/x86_64-windows/${module}_test.exe" "$test_name"; then
         result=1

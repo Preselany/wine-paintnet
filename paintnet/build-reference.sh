@@ -6,7 +6,7 @@ source_root="$(realpath "$here/..")"
 work_root="$(realpath -e -- "${1:-$here/work}")"
 test -s "$work_root/build/include/d2d1_1.h"
 mkdir -p "$work_root/reference"
-for probe in emboss-reference emboss-grid8-reference effect-properties-reference animation-reference; do
+for probe in emboss-reference emboss-grid8-reference effect-properties-reference animation-reference shader-reflection-reference; do
     probe_source="$probe"
     probe_flags=()
     if [[ "$probe" == emboss-grid8-reference ]]; then
@@ -18,6 +18,6 @@ for probe in emboss-reference emboss-grid8-reference effect-properties-reference
         paintnet-classic-builder:ubuntu24.04 x86_64-w64-mingw32-gcc \
         -Wall -Wextra -Werror -D__WINESRC__ -Iinclude -I"$source_root/include" \
         "${probe_flags[@]}" "$here/tests/$probe_source.c" -o "$work_root/reference/$probe.exe" \
-        -ld2d1 -ld3d11 -ldxguid -luuid -lole32
+        -ld2d1 -ld3d11 -ld3dcompiler -ldxguid -luuid -lole32
     printf 'Reference probe: %s\n' "$work_root/reference/$probe.exe"
 done

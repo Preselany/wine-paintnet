@@ -40,7 +40,7 @@ pinned by SHA-256; the application manifest is checked before each launch.
 ```sh
 ./paintnet/setup.sh /absolute/path/to/work
 ./paintnet/build.sh /absolute/path/to/work
-./paintnet/install-modules.sh /absolute/path/to/work d2d1 uianimation
+./paintnet/install-modules.sh /absolute/path/to/work d2d1 uianimation wined3d
 DISPLAY=:93 ./paintnet/test.sh /absolute/path/to/work
 DISPLAY=:93 ./paintnet/test-upload.sh /absolute/path/to/work
 DISPLAY=:93 ./paintnet/run.sh /absolute/path/to/work /absolute/path/to/image.png
@@ -58,11 +58,13 @@ is WineHQ's Ubuntu 24.04 package; other distributions are not yet validated.
 `install-modules.sh` waits for the development prefix to exit before changing
 its DLLs; close the development application normally before using it.
 
-The default build compiles `d2d1.dll`, `uianimation.dll`, and their tests. Additional Wine make targets
+The default build compiles `d2d1.dll`, `uianimation.dll`, `wined3d.dll`, and the
+focused tests. The shader-reflection change lives in Wine's shared `wined3d.dll`;
+DXVK still provides the application's Direct3D rendering. Additional Wine make targets
 can be supplied after the work directory as development reaches other APIs.
 
 `test.sh` runs the COM, effect-context, Histogram, Opacity Metadata, Alpha Mask,
-Convolve Matrix, Contrast, Bitmap Source, Emboss, Opacity, and UIAnimation
+Convolve Matrix, Contrast, Bitmap Source, Emboss, Opacity, UIAnimation, and shader-requirement
 regressions by default. A test name can be supplied
 after the work directory. `test-upload.sh` checks actual lookup-table texels by
 reading the fork's Direct3D texture back. It uses Wine's private structure
@@ -72,7 +74,7 @@ test or a test of the separate LookupTable3D image effect.
 
 For an independent Windows reference, the focused test executable accepts
 `D2D1_TEST_WARP=1` to use Microsoft's software renderer. Leave it unset for the
-normal Wine/DXVK tests. `build-reference.sh` builds standalone Emboss, property, and animation
+normal Wine/DXVK tests. `build-reference.sh` builds standalone Emboss, property, animation, and shader-reflection
 probes under the work directory's `reference/` folder. Run them on Windows
 with its system Direct2D; they write newline-delimited JSON containing actual
 pixels, bounds, properties, and HRESULTs. See [REFERENCE.md](REFERENCE.md) for the measurement

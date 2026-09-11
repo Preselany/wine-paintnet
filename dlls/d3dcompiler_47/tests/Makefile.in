@@ -8,4 +8,5 @@ SOURCES = \
 	blob.c \
 	hlsl_d3d11.c \
 	hlsl_d3d9.c \
-	reflection.c
+	reflection.c \
+	requirements.c

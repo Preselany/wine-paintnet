@@ -193,3 +193,24 @@ were measured independently rather than inferred from the Wine implementation.
 Keyframes, conflict arbitration, custom interpolators, timer update callbacks,
 other transition types, and complete pause/bounds behavior are not covered by
 this reference comparison and remain incomplete.
+
+## Shader reflection
+
+`shader-reflection-reference.exe` compiles eighteen small HLSL shaders using
+the native system compiler and captures their bytecode, shader versions,
+minimum feature levels and requirement flags. Inputs include vertex, pixel and
+compute profiles 4.0/4.1/5.0; vertex/pixel level_9_1 and level_9_3; early
+depth/stencil, double arithmetic, 11.1 double extensions, minimum precision and
+vertex UAV access. Windows batch 017-shader-reflection supplies these fixtures.
+
+The level_9_1 and level_9_3 profiles share the primary 4.0 version but differ in
+the legacy Aon9 shader's 2_0/2_1 version token. Early depth/stencil may appear
+only in dcl_globalFlags, without an SFI0 chunk. Optional double and vertex-UAV
+features still report feature level 11.0; their flags are independent capability
+requirements. The implementation reads both declaration and SFI0 bits.
+
+The exact captured bytecodes are regression fixtures with their own HLSL inputs
+recorded in the probe source. All 72 checks pass on Wine and Windows (batch
+018-shader-requirements), avoiding differences between compilers. Other shader
+models, malformed-container compatibility and all optional-feature combinations
+are not established by this comparison.

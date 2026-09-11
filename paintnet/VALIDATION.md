@@ -478,3 +478,24 @@ The application run verifies all 312 original binaries and passes the animation
 constructor failure. Next failure: shader reflection in the checkerboard effect.
 Log: paintnet-20260912-000139-244700.log; crash: pdncrash.15.log. No editor or
 image round trip is verified.
+
+## Shader reflection requirements
+
+Stock Wine fails GetMinFeatureLevel for all eighteen Windows-compiled reference
+shaders. The implementation passes 72 fixture checks on Wine and Windows, with
+no skips. The existing reflection suite passes 1,348 checks on both stock and
+modified Wine. Logs: shader-reflection-stock.log, shader-requirements-first.log,
+reflection-suite-stock.log, reflection-suite-fork.log; native batch
+018-shader-requirements.
+
+The complete thirteen-case project set executes 18,332 checks with zero failures
+and skips; one expected todo remains in the old custom-animation-factory test.
+Log: shader-requirements-all-focused.log. The changed reflection implementation
+is linked into wined3d.dll, so that private module is rebuilt and installed.
+DXVK continues to provide Direct3D rendering.
+
+The application verifies all 312 original binaries and advances to
+SetOutputBuffer during the checkerboard draw transform's initialization.
+Log: paintnet-20260912-001321-252991.log; crash: pdncrash.17.log. The earlier
+reflection diagnostic is preserved compressed as
+paintnet-20260912-000503-246950.log.gz. No application binary was changed.

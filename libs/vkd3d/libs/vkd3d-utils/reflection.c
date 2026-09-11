@@ -77,6 +77,8 @@ struct d3d12_reflection
     uint32_t type_conversion_count;
     uint32_t bitwise_count;
     uint32_t sample_frequency;
+    D3D_FEATURE_LEVEL legacy_feature_level;
+    uint64_t requires_flags;
 
     struct d3d12_buffer *buffers;
 
@@ -845,9 +847,25 @@ static UINT STDMETHODCALLTYPE d3d12_reflection_GetNumInterfaceSlots(ID3D12Shader
 static HRESULT STDMETHODCALLTYPE d3d12_reflection_GetMinFeatureLevel(
         ID3D12ShaderReflection *iface, D3D_FEATURE_LEVEL *level)
 {
-    FIXME("iface %p, level %p stub!\n", iface, level);
+    struct d3d12_reflection *reflection = impl_from_ID3D12ShaderReflection(iface);
 
-    return E_NOTIMPL;
+    TRACE("iface %p, level %p.\n", iface, level);
+    if (!level) return E_INVALIDARG;
+    if (reflection->legacy_feature_level)
+    {
+        *level = reflection->legacy_feature_level;
+        return S_OK;
+    }
+    switch (reflection->desc.Version & 0xff)
+    {
+        case 0x40: *level = D3D_FEATURE_LEVEL_10_0; break;
+        case 0x41: *level = D3D_FEATURE_LEVEL_10_1; break;
+        case 0x50: *level = D3D_FEATURE_LEVEL_11_0; break;
+        default:
+            FIXME("Unhandled shader model %#x.\n", reflection->desc.Version);
+            return E_NOTIMPL;
+    }
+    return S_OK;
 }
 
 static UINT STDMETHODCALLTYPE d3d12_reflection_GetThreadGroupSize(
@@ -872,9 +890,10 @@ static UINT STDMETHODCALLTYPE d3d12_reflection_GetThreadGroupSize(
 
 static UINT64 STDMETHODCALLTYPE d3d12_reflection_GetRequiresFlags(ID3D12ShaderReflection *iface)
 {
-    FIXME("iface %p stub!\n", iface);
+    struct d3d12_reflection *reflection = impl_from_ID3D12ShaderReflection(iface);
 
-    return 0;
+    TRACE("iface %p.\n", iface);
+    return reflection->requires_flags;
 }
 
 static const struct ID3D12ShaderReflectionVtbl d3d12_reflection_vtbl =
@@ -1725,6 +1744,58 @@ static HRESULT parse_stat(struct d3d12_reflection *r, const struct vkd3d_shader_
     return S_OK;
 }
 
+/* Some compiler versions encode requirements only in dcl_globalFlags, notably
+ * early depth/stencil. SFI0 carries the remaining optional feature bits. */
+static HRESULT parse_shader_requirements(struct d3d12_reflection *reflection,
+        const struct vkd3d_shader_code *section)
+{
+    const uint32_t *tokens;
+    uint32_t count, offset, length, opcode, flags;
+
+    if (!(tokens = get_data_ptr(section, 0, 2, sizeof(*tokens)))) return E_INVALIDARG;
+    count = tokens[1];
+    if (count < 2 || !get_data_ptr(section, 0, count, sizeof(*tokens))) return E_INVALIDARG;
+    for (offset = 2; offset < count; offset += length)
+    {
+        opcode = tokens[offset];
+        length = (opcode >> 24) & 0x1f;
+        if (!length)
+        {
+            if (count - offset < 2) return E_INVALIDARG;
+            length = tokens[offset + 1];
+        }
+        if (!length || length > count - offset) return E_INVALIDARG;
+        if ((opcode & 0x7ff) != 0x6a) continue; /* dcl_globalFlags */
+        flags = (opcode >> 11) & 0x1ff;
+        if (flags & 0x02) reflection->requires_flags |= D3D_SHADER_REQUIRES_DOUBLES;
+        if (flags & 0x04) reflection->requires_flags |= D3D_SHADER_REQUIRES_EARLY_DEPTH_STENCIL;
+        if (flags & 0x20) reflection->requires_flags |= D3D_SHADER_REQUIRES_MINIMUM_PRECISION;
+        if (flags & 0x40) reflection->requires_flags |= D3D_SHADER_REQUIRES_11_1_DOUBLE_EXTENSIONS;
+        if (flags & 0x80) reflection->requires_flags |= D3D_SHADER_REQUIRES_11_1_SHADER_EXTENSIONS;
+    }
+    return S_OK;
+}
+
+static HRESULT parse_legacy_feature_level(struct d3d12_reflection *reflection,
+        const struct vkd3d_shader_code *section)
+{
+    const uint32_t *header, *version;
+
+    /* Aon9 includes an offset to its D3D9 shader. The level_9_3 compiler profile
+     * uses the 2_1 version token; level_9_1 uses 2_0, for both vertex and pixel. */
+    if (!(header = get_data_ptr(section, 0, 4, sizeof(*header)))) return E_INVALIDARG;
+    if (!(version = get_data_ptr(section, header[3], 1, sizeof(*version)))) return E_INVALIDARG;
+    switch (*version & 0xffff)
+    {
+        case 0x200: reflection->legacy_feature_level = D3D_FEATURE_LEVEL_9_1; break;
+        case 0x201: reflection->legacy_feature_level = D3D_FEATURE_LEVEL_9_3; break;
+        default:
+            FIXME("Unhandled legacy shader version %#x.\n", *version);
+            return E_NOTIMPL;
+    }
+    return S_OK;
+}
+
 static HRESULT d3d12_reflection_init(struct d3d12_reflection *reflection,
         const IID *iid, const void *data, size_t data_size, unsigned int version)
 {
@@ -1800,6 +1871,23 @@ static HRESULT d3d12_reflection_init(struct d3d12_reflection *reflection,
                 goto fail;
             }
             reflection->desc.Version = *shader_version;
+            if (FAILED(hr = parse_shader_requirements(reflection, &section->data))) goto fail;
+        }
+        else if (section->tag == TAG_SFI0)
+        {
+            const void *flags;
+            uint64_t value;
+            if (!(flags = get_data_ptr(&section->data, 0, 1, sizeof(value))))
+            {
+                hr = E_INVALIDARG;
+                goto fail;
+            }
+            memcpy(&value, flags, sizeof(value));
+            reflection->requires_flags |= value;
+        }
+        else if (section->tag == TAG_AON9)
+        {
+            if (FAILED(hr = parse_legacy_feature_level(reflection, &section->data))) goto fail;
         }
         else if (section->tag == TAG_STAT)
         {
