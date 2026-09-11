@@ -69,6 +69,14 @@ layout, verifies that the installed module matches the build, and must only
 run against this checkout's module. It is not a native Windows conformance
 test or a test of the separate LookupTable3D image effect.
 
+For an independent Windows reference, the focused test executable accepts
+`D2D1_TEST_WARP=1` to use Microsoft's software renderer. Leave it unset for the
+normal Wine/DXVK tests. `build-reference.sh` builds standalone Emboss and property
+probes under the work directory's `reference/` folder. Run them on Windows
+with its system Direct2D; they write newline-delimited JSON containing actual
+pixels, bounds, properties, and HRESULTs. See [REFERENCE.md](REFERENCE.md) for the measurement
+scope and current reference-host status.
+
 Official application: https://github.com/paintdotnet/release/releases/tag/v5.1.12
 
 Wine upstream: https://github.com/wine-mirror/wine

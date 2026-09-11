@@ -6,6 +6,7 @@
 #include "d2d1_1.h"
 #include "d2d1effects_2.h"
 #include "d3d11.h"
+#include "effect_test.h"
 #include "wine/test.h"
 
 static void set_uint(ID2D1Effect *effect, UINT index, D2D1_PROPERTY_TYPE type, UINT value)
@@ -108,7 +109,7 @@ START_TEST(convolve_matrix)
     ok(ID2D1Properties_GetPropertyCount(properties) == 11, "Wrong property count.\n");
     ok(ID2D1Properties_GetType(properties, D2D1_CONVOLVEMATRIX_PROP_KERNEL_UNIT_LENGTH) == D2D1_PROPERTY_TYPE_VECTOR2,
             "Kernel unit length must be a vector, as declared in the SDK.\n");
-    hr = D3D11CreateDevice(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+    hr = D3D11CreateDevice(NULL, effect_test_driver(), NULL, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
             NULL, 0, D3D11_SDK_VERSION, &d3d, NULL, NULL);
     if (FAILED(hr)) { win_skip("No D3D11 device.\n"); goto done; }
     hr = ID3D11Device_QueryInterface(d3d, &IID_IDXGIDevice, (void **)&dxgi);
@@ -139,6 +140,13 @@ START_TEST(convolve_matrix)
     hr = ID2D1Effect_SetValue(effect, D2D1_CONVOLVEMATRIX_PROP_KERNEL_MATRIX, D2D1_PROPERTY_TYPE_BLOB,
             (const BYTE *)&single, sizeof(single));
     ok(FAILED(hr), "Truncated kernel accepted.\n");
+    value = 3;
+    hr = ID2D1Effect_SetValue(effect,D2D1_CONVOLVEMATRIX_PROP_KERNEL_SIZE_X,D2D1_PROPERTY_TYPE_UINT32,
+            (const BYTE *)&value,sizeof(value));
+    ok(hr == S_OK, "Restoring kernel width returned %#lx.\n",hr);
+    hr = ID2D1Effect_SetValue(effect,D2D1_CONVOLVEMATRIX_PROP_KERNEL_MATRIX,D2D1_PROPERTY_TYPE_BLOB,
+            (const BYTE *)identity,sizeof(identity));
+    ok(hr == S_OK, "Restoring kernel weights returned %#lx.\n",hr);
     for (i = 0; i < 6; ++i)
     {
         pixels[i][0] = pixels[i][1] = pixels[i][2] = values[i % 3];

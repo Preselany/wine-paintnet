@@ -6,6 +6,7 @@
 #include "d2d1_1.h"
 #include "d2d1effects_2.h"
 #include "d3d11.h"
+#include "effect_test.h"
 #include "wine/test.h"
 
 static HRESULT draw(ID2D1DeviceContext *context, ID2D1Image *image, ID2D1Bitmap1 *target,
@@ -77,7 +78,7 @@ START_TEST(alpha_mask)
     HRESULT hr;
 
     CoInitializeEx(NULL, COINIT_MULTITHREADED);
-    hr = D3D11CreateDevice(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+    hr = D3D11CreateDevice(NULL, effect_test_driver(), NULL, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
             NULL, 0, D3D11_SDK_VERSION, &d3d_device, NULL, NULL);
     if (FAILED(hr)) { win_skip("No D3D11 device.\n"); goto cleanup; }
     hr = ID3D11Device_QueryInterface(d3d_device, &IID_IDXGIDevice, (void **)&dxgi_device);

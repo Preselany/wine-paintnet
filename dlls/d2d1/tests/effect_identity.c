@@ -5,6 +5,7 @@
 #include "d2d1_1.h"
 #include "d2d1effectauthor.h"
 #include "d3d11.h"
+#include "effect_test.h"
 #include "initguid.h"
 #include "d2d1effects.h"
 #include "wine/test.h"
@@ -171,7 +172,8 @@ START_TEST(effect_identity)
         L"<Property name='Category' type='string' value='Test'/>"
         L"<Property name='Description' type='string' value='COM identity regression'/>"
         L"<Inputs><Input name='Source'/></Inputs>"
-        L"<Property name='Value' type='uint32'/></Effect>";
+        L"<Property name='Value' type='uint32'>"
+        L"<Property name='DisplayName' type='string' value='Value'/></Property></Effect>";
     static const D2D1_PROPERTY_BINDING binding = {L"Value", set_value, get_value};
     ID2D1Factory1 *factory;
     ID3D11Device *d3d_device;
@@ -184,7 +186,7 @@ START_TEST(effect_identity)
     D2D1_VECTOR_4F color = {0.2f, 0.4f, 0.6f, 0.8f}, actual;
 
     CoInitializeEx(NULL, COINIT_MULTITHREADED);
-    hr = D3D11CreateDevice(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+    hr = D3D11CreateDevice(NULL, effect_test_driver(), NULL, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
             NULL, 0, D3D11_SDK_VERSION, &d3d_device, NULL, NULL);
     if (FAILED(hr)) { win_skip("No D3D11 device, hr %#lx.\n", hr); goto uninit; }
     hr = ID3D11Device_QueryInterface(d3d_device, &IID_IDXGIDevice, (void **)&dxgi_device);

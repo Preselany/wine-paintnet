@@ -6,6 +6,7 @@
 #include "d2d1_1.h"
 #include "d2d1effects.h"
 #include "d3d11.h"
+#include "effect_test.h"
 #include "wine/test.h"
 
 static HRESULT draw_image(ID2D1DeviceContext *context, ID2D1Image *image, ID2D1Bitmap1 *target,
@@ -56,7 +57,7 @@ START_TEST(opacity_metadata)
     HRESULT hr;
 
     CoInitializeEx(NULL, COINIT_MULTITHREADED);
-    hr = D3D11CreateDevice(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+    hr = D3D11CreateDevice(NULL, effect_test_driver(), NULL, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
             NULL, 0, D3D11_SDK_VERSION, &d3d_device, NULL, NULL);
     if (FAILED(hr)) { win_skip("No D3D11 device.\n"); goto uninit; }
     hr = ID3D11Device_QueryInterface(d3d_device, &IID_IDXGIDevice, (void **)&dxgi_device);
@@ -80,7 +81,7 @@ START_TEST(opacity_metadata)
     hr = ID2D1Effect_GetValue(effect, D2D1_OPACITYMETADATA_PROP_INPUT_OPAQUE_RECT,
             D2D1_PROPERTY_TYPE_VECTOR4, (BYTE *)&value, sizeof(value));
     ok(hr == S_OK && value.x == -FLT_MAX && value.y == -FLT_MAX && value.z == FLT_MAX && value.w == FLT_MAX,
-            "Default opaque rectangle differs, hr %#lx.\n", hr);
+            "Default opaque rectangle {%g,%g,%g,%g} differs, hr %#lx.\n",value.x,value.y,value.z,value.w,hr);
     hr = ID2D1Effect_SetValue(effect, D2D1_OPACITYMETADATA_PROP_INPUT_OPAQUE_RECT,
             D2D1_PROPERTY_TYPE_VECTOR4, (const BYTE *)&opaque_rect, sizeof(opaque_rect));
     ok(hr == S_OK, "Set rectangle returned %#lx.\n", hr);

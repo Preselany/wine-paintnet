@@ -6,6 +6,7 @@
 #include "d2d1_1.h"
 #include "d2d1effects_2.h"
 #include "d3d11.h"
+#include "effect_test.h"
 #include "wincodec.h"
 #include "wine/test.h"
 
@@ -104,7 +105,8 @@ static void test_empty_inputs(ID2D1Factory1 *factory)
     for (i = 0; i < ARRAY_SIZE(inputs); ++i)
     {
         winetest_push_context("empty Inputs %u",i);
-        swprintf(xml,ARRAY_SIZE(xml),L"%ls%ls<Property name='Value' type='float' value='1'/></Effect>",prefix,inputs[i]);
+        swprintf(xml,ARRAY_SIZE(xml),L"%ls%ls<Property name='Value' type='float' value='1'>"
+                L"<Property name='DisplayName' type='string' value='Value'/></Property></Effect>",prefix,inputs[i]);
         hr = ID2D1Factory1_RegisterEffectFromString(factory,&clsid,xml,NULL,0,unused_factory);
         ok(hr == S_OK, "Empty input registration returned %#lx.\n", hr);
         if (SUCCEEDED(hr))
@@ -225,7 +227,7 @@ START_TEST(bitmap_source)
     ok(hr == S_OK, "Bitmap Source metadata returned %#lx.\n", hr);
     if (FAILED(hr)) goto done;
     ok(ID2D1Properties_GetPropertyCount(properties) == 6, "Wrong property count.\n");
-    hr = D3D11CreateDevice(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+    hr = D3D11CreateDevice(NULL, effect_test_driver(), NULL, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
             NULL,0,D3D11_SDK_VERSION,&d3d,NULL,NULL);
     if (FAILED(hr)) { win_skip("No D3D11 device.\n"); goto done; }
     hr = ID3D11Device_QueryInterface(d3d, &IID_IDXGIDevice, (void **)&dxgi);
@@ -281,6 +283,8 @@ START_TEST(bitmap_source)
     value = 0;
     hr = ID2D1Effect_SetValue(effect,D2D1_BITMAPSOURCE_PROP_ORIENTATION,D2D1_PROPERTY_TYPE_ENUM,(BYTE *)&value,sizeof(value));
     ok(FAILED(hr), "Invalid orientation accepted.\n");
+    /* Restore valid state even if the native setter clamps an invalid value. */
+    set_scale(effect,1,1);
     for (orientation = 1; orientation <= 8; ++orientation)
     {
         winetest_push_context("orientation %u",orientation);
@@ -289,7 +293,7 @@ START_TEST(bitmap_source)
         copies = source.copies;
         hr = ID2D1DeviceContext_GetImageLocalBounds(context,image,&bounds);
         ok(hr == S_OK && bounds.left == 0 && bounds.top == 0 && bounds.right == width && bounds.bottom == height,
-                "Wrong bounds, hr %#lx.\n", hr);
+            "Wrong bounds {%g,%g,%g,%g}, hr %#lx.\n",bounds.left,bounds.top,bounds.right,bounds.bottom,hr);
         ok(source.copies == copies, "Bounds decoded pixels.\n");
         memset(expected,0,sizeof(expected));
         for (y = 0; y < height; ++y)

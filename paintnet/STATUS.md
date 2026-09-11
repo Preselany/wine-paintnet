@@ -184,6 +184,16 @@ The unchanged application now passes Bitmap Source metadata. Its next missing
 effect is Emboss (`b1c5eb2b-0348-43f0-8107-4957cacba2ae`); startup still fails
 in EffectCategories. All 312 original binaries remain intact.
 
+## Independent Windows comparison
+
+A separate Windows 11 evaluation VM now runs the focused tests against the
+system Direct2D DLL and Microsoft WARP. This identified real discrepancies in
+several earlier Wine-only expectations; passing those checks did not establish
+native compatibility. The corrected COM identity regression passes all 28
+checks on Windows. Pixel, property-clamping, bounds, and cache differences in
+other cases remain under correction. See REFERENCE.md for the recorded baseline.
+The original Paint.NET application still fails before opening the editor.
+
 ## Observed remaining failures
 
 * Missing Emboss effect registration/implementation, now the first

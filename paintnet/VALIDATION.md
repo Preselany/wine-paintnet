@@ -385,3 +385,17 @@ Evidence outside the repository: `logs/build-bitmap-source-final.log`,
 `logs/bitmap-source-final.log`, `logs/d2d1-suite-bitmap-source.log`,
 `logs/paintnet-20260911-222112-196386.log`, and
 `app/Paint.NET App Files/CrashLogs/pdncrash.10.log`.
+
+## Independent Windows baseline
+
+A Windows 11 evaluation VM now runs the same public-API tests against its
+system Direct2D and Microsoft WARP. The corrected native batch records 9,927
+checks, 283 expectation mismatches, and no skips. COM identity passes all 28
+checks. The mismatch breakdown and separate Emboss/property measurements are
+in REFERENCE.md. These findings supersede any interpretation of the earlier
+Wine-only pixel tests as native conformance.
+
+Restoring valid state after numeric validation and adding required custom
+property DisplayName metadata prevents cascading native test failures. The
+updated tests retain 9,931 passing checks on Wine with no skips. The reference
+tools build with -Wall -Wextra -Werror. No implementation changed in this step.

@@ -4,6 +4,7 @@
 #define COBJMACROS
 #include "d2d1effectauthor_1.h"
 #include "d3d11.h"
+#include "effect_test.h"
 #include "wine/test.h"
 #include "initguid.h"
 
@@ -202,7 +203,7 @@ START_TEST(effect_context)
     float dpi_x = 0, dpi_y = 0;
 
     CoInitializeEx(NULL, COINIT_MULTITHREADED);
-    hr = D3D11CreateDevice(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+    hr = D3D11CreateDevice(NULL, effect_test_driver(), NULL, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
             NULL, 0, D3D11_SDK_VERSION, &d3d_device, NULL, NULL);
     if (FAILED(hr)) { win_skip("No D3D11 device, hr %#lx.\n", hr); goto uninit; }
     hr = ID3D11Device_QueryInterface(d3d_device, &IID_IDXGIDevice, (void **)&dxgi_device);

@@ -6,6 +6,7 @@
 #include "d2d1_1.h"
 #include "d2d1effects_2.h"
 #include "d3d11.h"
+#include "effect_test.h"
 #include "wine/test.h"
 
 static HRESULT draw(ID2D1DeviceContext *context, ID2D1Image *image, const D2D1_RECT_F *rect)
@@ -82,7 +83,7 @@ START_TEST(contrast)
     ok(hr == S_OK, "Contrast metadata returned %#lx.\n", hr);
     if (FAILED(hr)) goto done;
     ok(ID2D1Properties_GetPropertyCount(properties) == 2, "Wrong property count.\n");
-    hr = D3D11CreateDevice(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+    hr = D3D11CreateDevice(NULL, effect_test_driver(), NULL, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
             NULL,0,D3D11_SDK_VERSION,&d3d,NULL,NULL);
     if (FAILED(hr)) { win_skip("No D3D11 device.\n"); goto done; }
     hr = ID3D11Device_QueryInterface(d3d, &IID_IDXGIDevice, (void **)&dxgi);
