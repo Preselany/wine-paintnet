@@ -17,7 +17,8 @@ with DXVK 3.1 on llvmpipe. The trace confirms Wine's builtin `d2d1.dll` loads.
 The original application **does not yet start successfully**. Its first effect
 metadata lookup fails for `CLSID_D2D1Histogram`
 (`881db7d0-f7ee-4d4d-a6d2-4697acc66ee8`), causing the `EffectCategories` type
-initializer to fail. A separate failure occurs during custom-effect disposal.
+initializer to fail. A separate failure was observed during custom-effect disposal
+in that initial baseline.
 
 ## First Wine fix: custom effect COM interfaces
 
@@ -68,11 +69,34 @@ initialization; the error window also encountered the same DispatcherQueue
 activation failure. The new context path is verified by the focused test,
 not by a successful Paint.NET startup.
 
+## Third Wine change: Histogram and Opacity Metadata
+
+Histogram is now a registered analysis effect with a real Direct3D 11 compute
+shader. Drawing it counts clamped, unpremultiplied channel values and exposes
+the normalized bins through the output property. It accepts bitmap inputs and
+bitmap inputs wrapped in Opacity Metadata. The implementation currently requires
+feature level 11.0; compute-capable feature-level 10 devices and general input
+effect graphs remain unsupported and are not reported as successful analyses.
+
+Opacity Metadata stores and returns its opaque-region hint while preserving
+input pixels. Nested metadata effects resolve to the original bitmap for
+rendering and local bounds, with cycle detection. The renderer does not yet use
+the hint to optimize blending. Focused tests verify source-pixel preservation,
+alpha values, crop/offset handling, and recovery after breaking a cycle.
+
+The normal application now gets past both metadata lookups. The next missing
+registration is Alpha Mask (`c80ecff0-3fd5-4f05-8328-c5d1724b4f0a`). Its crash
+log also exposes a missing `CreatePresentationFactory` export from `dcomp.dll`.
+All application binaries still pass the original-archive integrity check.
+
 ## Observed remaining failures
 
-* Missing Histogram effect registration/implementation. Metadata alone must
-  not be treated as a functioning histogram renderer.
-* Retest Paint.NET's device feature probe after Histogram initialization is fixed.
+* Missing Alpha Mask effect registration/implementation, now the first failing
+  category lookup. Further builtin effects and general effect-graph evaluation
+  still need implementation.
+* Retest Paint.NET's device feature probe after its effect-category initializer
+  can finish. The EffectContext1 regression passes independently.
+* Missing `dcomp.dll!CreatePresentationFactory`, observed during diagnostics.
 * `Windows.System.DispatcherQueue` activation fails with `REGDB_E_CLASSNOTREG`
   when Paint.NET creates display-aware windows, including error-reporting UI.
 * The broader Direct2D drawing/effect pipeline, animation, and composition

@@ -17,6 +17,7 @@
  */
 
 #include "d2d1_private.h"
+#include <float.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(d2d);
 
@@ -1804,6 +1805,60 @@ static HRESULT __stdcall scale_factory(IUnknown **effect)
     return d2d_effect_create_impl(effect, &properties, sizeof(properties));
 }
 
+static const WCHAR opacity_metadata_description[] = L"<?xml version='1.0'?><Effect>"
+    L"<Property name='DisplayName' type='string' value='Opacity Metadata'/>"
+    L"<Property name='Author' type='string' value='The Wine Project'/>"
+    L"<Property name='Category' type='string' value='Utility'/>"
+    L"<Property name='Description' type='string' value='Annotates the opaque region of an input image'/>"
+    L"<Inputs minimum='1' maximum='1'><Input name='Source'/></Inputs>"
+    L"<Property name='InputOpaqueRect' type='vector4'/></Effect>";
+
+struct opacity_metadata_properties
+{
+    D2D1_VECTOR_4F input_opaque_rect;
+};
+
+EFFECT_PROPERTY_RW(opacity_metadata, input_opaque_rect, VECTOR4)
+
+static const D2D1_PROPERTY_BINDING opacity_metadata_bindings[] =
+{
+    {L"InputOpaqueRect", BINDING_RW(opacity_metadata, input_opaque_rect)},
+};
+
+static HRESULT STDMETHODCALLTYPE opacity_metadata_Initialize(ID2D1EffectImpl *iface,
+        ID2D1EffectContext *context, ID2D1TransformGraph *graph)
+{
+    return ID2D1TransformGraph_SetPassthroughGraph(graph, 0);
+}
+
+static HRESULT STDMETHODCALLTYPE opacity_metadata_SetGraph(ID2D1EffectImpl *iface, ID2D1TransformGraph *graph)
+{
+    return ID2D1TransformGraph_SetPassthroughGraph(graph, 0);
+}
+
+static const ID2D1EffectImplVtbl opacity_metadata_vtbl =
+{
+    d2d_effect_impl_QueryInterface,
+    d2d_effect_impl_AddRef,
+    d2d_effect_impl_Release,
+    opacity_metadata_Initialize,
+    d2d_effect_impl_PrepareForRender,
+    opacity_metadata_SetGraph,
+};
+
+static HRESULT CALLBACK opacity_metadata_factory(IUnknown **effect)
+{
+    static const struct opacity_metadata_properties properties =
+    {
+        {-FLT_MAX, -FLT_MAX, FLT_MAX, FLT_MAX},
+    };
+    HRESULT hr;
+
+    if (SUCCEEDED(hr = d2d_effect_create_impl(effect, &properties, sizeof(properties))))
+        ((ID2D1EffectImpl *)*effect)->lpVtbl = &opacity_metadata_vtbl;
+    return hr;
+}
+
 void d2d_effects_init_builtins(struct d2d_factory *factory)
 {
     static const struct builtin_description
@@ -1835,6 +1890,7 @@ void d2d_effects_init_builtins(struct d2d_factory *factory)
         { &CLSID_D2D1HueRotation, X2(hue_rotation) },
         { &CLSID_D2D1Saturation, X2(saturation) },
         { &CLSID_D2D1Scale, X2(scale) },
+        { &CLSID_D2D1OpacityMetadata, X2(opacity_metadata) },
 #undef X2
 #undef X
     };
@@ -1851,6 +1907,7 @@ void d2d_effects_init_builtins(struct d2d_factory *factory)
             WARN("Failed to register the effect %s, hr %#lx.\n", wine_dbgstr_guid(desc->clsid), hr);
         }
     }
+    d2d_histogram_init_builtin(factory);
 }
 
 /* Same syntax is used for value and default values. */
@@ -2124,7 +2181,7 @@ static UINT32 d2d_effect_properties_get_value_size(const struct d2d_effect_prope
     if (!(prop = d2d_effect_properties_get_property_by_index(properties, index)))
         return 0;
 
-    if (prop->get_function)
+    if (effect && prop->get_function)
     {
         if (FAILED(prop->get_function(effect->impl_unknown, NULL, 0, &size))) return 0;
         return size;
@@ -2995,6 +3052,56 @@ static const ID2D1ImageVtbl d2d_effect_image_vtbl =
     d2d_effect_image_Release,
     d2d_effect_image_GetFactory,
 };
+
+static HRESULT d2d_opacity_metadata_get_input(ID2D1Image *image, ID2D1Image **input)
+{
+    struct d2d_effect *effect;
+
+    if (image->lpVtbl != &d2d_effect_image_vtbl) return S_FALSE;
+    effect = impl_from_ID2D1Image(image);
+    if (effect->impl->lpVtbl != &opacity_metadata_vtbl) return S_FALSE;
+    if (!effect->input_count || !effect->inputs[0]) return D2DERR_WRONG_STATE;
+    *input = effect->inputs[0];
+    return S_OK;
+}
+
+HRESULT d2d_effect_resolve_bitmap(ID2D1Image *image, ID2D1Bitmap **bitmap)
+{
+    ID2D1Image *slow = image;
+    unsigned int step = 0;
+    HRESULT hr;
+
+    /* Opacity metadata is a rendering hint, so the pixel data is unchanged.
+     * Detect cycles while walking nested metadata without recursive calls. */
+    for (;;)
+    {
+        if (SUCCEEDED(ID2D1Image_QueryInterface(image, &IID_ID2D1Bitmap, (void **)bitmap)))
+            return S_OK;
+        if ((hr = d2d_opacity_metadata_get_input(image, &image)) != S_OK)
+            return hr;
+        if (++step % 2 == 0 && (hr = d2d_opacity_metadata_get_input(slow, &slow)) != S_OK)
+            return hr;
+        if (image == slow) return D2DERR_CYCLIC_GRAPH;
+    }
+}
+
+HRESULT d2d_effect_draw_image(struct d2d_device_context *context, ID2D1Image *image,
+        const D2D1_RECT_F *image_rect)
+{
+    struct d2d_effect *effect;
+    CLSID clsid;
+    HRESULT hr;
+
+    if (image->lpVtbl != &d2d_effect_image_vtbl)
+        return S_FALSE;
+    effect = impl_from_ID2D1Image(image);
+    if (FAILED(hr = d2d_effect_get_value(effect, D2D1_PROPERTY_CLSID, D2D1_PROPERTY_TYPE_CLSID,
+            (BYTE *)&clsid, sizeof(clsid))))
+        return hr;
+    if (IsEqualGUID(&clsid, &CLSID_D2D1Histogram))
+        return d2d_histogram_draw(effect, context, image_rect);
+    return S_FALSE;
+}
 
 static inline struct d2d_effect_properties *impl_from_ID2D1Properties(ID2D1Properties *iface)
 {

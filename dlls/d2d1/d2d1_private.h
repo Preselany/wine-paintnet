@@ -788,6 +788,7 @@ static inline struct d2d_factory *unsafe_impl_from_ID2D1Factory(ID2D1Factory *if
 }
 
 void d2d_effects_init_builtins(struct d2d_factory *factory);
+void d2d_histogram_init_builtin(struct d2d_factory *factory);
 HRESULT d2d_factory_create_device(ID2D1Factory1 *factory, IDXGIDevice *dxgi_device,
         bool allow_get_dxgi_device, REFIID iid, void **device);
 struct d2d_effect_registration * d2d_factory_get_registered_effect(ID2D1Factory *factory,
@@ -881,6 +882,11 @@ struct d2d_effect
     size_t input_count;
 };
 
+HRESULT d2d_histogram_draw(struct d2d_effect *effect, struct d2d_device_context *context,
+        const D2D1_RECT_F *image_rect);
+HRESULT d2d_effect_resolve_bitmap(ID2D1Image *image, ID2D1Bitmap **bitmap);
+HRESULT d2d_effect_draw_image(struct d2d_device_context *context, ID2D1Image *image,
+        const D2D1_RECT_F *image_rect);
 HRESULT d2d_effect_create(struct d2d_device_context *context, const CLSID *effect_id,
         ID2D1Effect **effect);
 void d2d_effect_init_properties(struct d2d_effect *effect, struct d2d_effect_properties *properties);

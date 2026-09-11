@@ -16,6 +16,7 @@ SOURCES = \
 	effect.c \
 	factory.c \
 	geometry.c \
+	histogram.c \
 	hwnd_render_target.c \
 	layer.c \
 	lookup_table.c \

@@ -113,3 +113,64 @@ not an assertion that all of Direct2D is correct.
 Evidence: `logs/d2d1-suite-stock.log` and `logs/d2d1-suite-context1.log` in the
 work directory. Both focused-test scripts and their shell syntax checks also
 passed. The internal diagnostic compiles with `-Wall -Wextra -Werror`.
+
+## Histogram and Opacity Metadata
+
+The final focused test script now includes four test cases. Histogram checks
+normalized bin values for all four channels, unpremultiplication, transparent
+pixels, clamping, repeat draws without accumulation, crops, changing bin counts,
+replacing the source, BGRA input with ignored alpha, and input wrapped in
+Opacity Metadata. It also verifies all eight target pixels remain unchanged by
+analysis. The earlier version without the metadata-input case passed 115 checks;
+the final version also covers DIP/pixel crops on a 192 DPI bitmap and passes
+123.
+
+Opacity Metadata compares direct drawing with a two-effect chain and compares
+the resulting pixels with the original premultiplied pixels. A second draw uses
+an image crop and target offset. Tests also cover property defaults/round trips,
+local bounds, cyclic input rejection, and successful drawing after breaking the
+cycle. It passes 47 checks.
+
+| Test | Stock WineHQ 11.17 | Rebuilt fork |
+| --- | --- | --- |
+| Histogram | Registration missing; 2 checks, 1 failure | 123 checks, 0 failures |
+| Opacity Metadata | Effect missing; 5 checks, 1 failure | 47 checks, 0 failures |
+| Earlier custom COM identity | Previously recorded 6 failures | 26 checks, 0 failures |
+| EffectContext1/resources | Previously recorded 7 failures | 71 checks, 0 failures |
+
+These shader tests used DXVK with llvmpipe on the isolated X server. They have
+not yet been compared against native Windows Direct2D. The Histogram bin range
+follows the 2–1024 range in Microsoft's
+[Win2D histogram implementation](https://github.com/microsoft/Win2D/blob/winappsdk/main/winrt/lib/images/CanvasImage.cpp).
+The normalized sum is described and used by Microsoft's
+[HDR sample](https://github.com/microsoft/Windows-universal-samples/blob/main/Samples/D2DAdvancedColorImages/cpp/D2DAdvancedColorImages/D2DAdvancedColorImagesRenderer.cpp).
+The channel and alpha semantics follow the
+[Histogram documentation](https://learn.microsoft.com/en-us/windows/win32/direct2d/histogram).
+Opacity Metadata's property default follows the
+[SDK property documentation](https://learn.microsoft.com/en-us/windows/win32/api/d2d1effects/ne-d2d1effects-d2d1_opacitymetadata_prop);
+its non-destructive nature is also documented by
+[Paint.NET](https://paintdotnet.github.io/apidocs/api/PaintDotNet.Direct2D1.Effects.OpacityMetadataEffect.html).
+
+The application trace first advanced from Histogram to Opacity Metadata, then
+from Opacity Metadata to Alpha Mask. It still does not open an editor. The
+latest crash diagnostics also report the absent `CreatePresentationFactory`
+export from `dcomp.dll`. No application switches or binaries were changed.
+
+Evidence outside the repository: `logs/histogram-stock.log`,
+`logs/histogram-after.log`, `logs/opacity-stock.log`,
+`logs/analysis-effects-final.log`, `logs/analysis-effects-upload.log`,
+`logs/paintnet-20260911-210325-143270.log`, and
+`logs/paintnet-20260911-210928-145714.log`.
+
+The pixel-unit regression was also run before installing the final unit-mode
+fix. That version failed two assertions because the cropped histogram was empty.
+After the fix, both the DIP and pixel-coordinate crops produce the expected
+bins. The final focused run totals 267 checks, zero failures, zero skips; the
+lookup texture readback still matches all 120 rows.
+
+The existing Direct2D suite was rerun after the new effects and local-bounds
+support: 17,151 checks, 243 todos, the same two unexpected todo successes, and
+one reference-device skip as stock Wine. The final unit-mode correction is
+covered by the focused before/after test. Evidence:
+`logs/d2d1-suite-analysis-final.log` and
+`logs/histogram-pixel-units-before.log`.

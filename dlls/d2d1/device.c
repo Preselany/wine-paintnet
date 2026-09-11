@@ -2427,10 +2427,13 @@ static HRESULT STDMETHODCALLTYPE d2d_device_context_GetImageLocalBounds(ID2D1Dev
     D2D_SIZE_U pixel_size;
     ID2D1Bitmap *bitmap;
     D2D_SIZE_F size;
+    HRESULT hr;
 
     TRACE("iface %p, image %p, local_bounds %p.\n", iface, image, local_bounds);
 
-    if (SUCCEEDED(ID2D1Image_QueryInterface(image, &IID_ID2D1Bitmap, (void **)&bitmap)))
+    hr = d2d_effect_resolve_bitmap(image, &bitmap);
+    if (FAILED(hr)) return hr;
+    if (hr == S_OK)
     {
         local_bounds->left = 0.0f;
         local_bounds->top  = 0.0f;
@@ -2719,6 +2722,7 @@ static void STDMETHODCALLTYPE d2d_device_context_DrawImage(ID2D1DeviceContext6 *
 {
     struct d2d_device_context *context = impl_from_ID2D1DeviceContext(iface);
     ID2D1Bitmap *bitmap;
+    HRESULT hr;
 
     TRACE("iface %p, image %p, target_offset %s, image_rect %s, interpolation_mode %#x, composite_mode %#x.\n",
             iface, image, debug_d2d_point_2f(target_offset), debug_d2d_rect_f(image_rect),
@@ -2743,11 +2747,23 @@ static void STDMETHODCALLTYPE d2d_device_context_DrawImage(ID2D1DeviceContext6 *
     if (composite_mode != D2D1_COMPOSITE_MODE_SOURCE_OVER)
         FIXME("Unhandled composite mode %#x.\n", composite_mode);
 
-    if (SUCCEEDED(ID2D1Image_QueryInterface(image, &IID_ID2D1Bitmap, (void **)&bitmap)))
+    hr = d2d_effect_resolve_bitmap(image, &bitmap);
+    if (FAILED(hr))
+    {
+        d2d_device_context_set_error(context, hr);
+        return;
+    }
+    if (hr == S_OK)
     {
         d2d_device_context_draw_bitmap(context, bitmap, NULL, 1.0f, interpolation_mode, image_rect, target_offset, NULL);
 
         ID2D1Bitmap_Release(bitmap);
+        return;
+    }
+
+    if ((hr = d2d_effect_draw_image(context, image, image_rect)) != S_FALSE)
+    {
+        if (FAILED(hr)) d2d_device_context_set_error(context, hr);
         return;
     }
 
