@@ -214,3 +214,31 @@ recorded in the probe source. All 72 checks pass on Wine and Windows (batch
 018-shader-requirements), avoiding differences between compilers. Other shader
 models, malformed-container compatibility and all optional-feature combinations
 are not established by this comparison.
+
+## Custom source draw transforms
+
+`draw-transform-reference.exe` measures draw-info validation, constant buffers,
+scene coordinates, bounds, and RGBA pixels using public Direct2D APIs and its own
+HLSL shader. It uses the Microsoft WARP device when `D2D1_TEST_WARP=1` is set.
+The optional modes `D2D1_PROBE_CACHED`, `D2D1_PROBE_SCENE`, and
+`D2D1_PROBE_NESTED` select cached output, the raw scene-position vector, and an
+outer Opacity effect respectively. Unset each unused mode before a run; an
+inherited environment variable selects that mode even if its value is `0`.
+
+The native and Wine `draw_transform` regression additionally tests direct and
+nested paths in one process, with both caching settings, caller-data ownership,
+all supported precision/depth enum values, invalid settings, 96/192 DPI,
+negative finite bounds, and an infinite source cropped before drawing.
+
+Compare matching standalone modes with:
+
+```sh
+python3 paintnet/compare-draw-transform.py windows.log wine.log
+```
+
+Each standalone mode has 72 pixel cases, 18,432 RGBA channels, and 320 complete
+records. Redundant bounds-mapping count differences are reported separately.
+The comparison uses an absolute pixel tolerance of 2e-5 and does not
+accept an incomplete probe. Source transforms with image inputs, custom vertex
+processing, general transform graphs, arbitrary affine transforms, non-float32
+final targets, and performance require further independent measurements.

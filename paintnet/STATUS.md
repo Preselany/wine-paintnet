@@ -6,6 +6,14 @@ This project targets the unmodified stable Windows application through Wine's
 Direct2D implementation. The earlier success using Paint.NET's experimental
 managed renderer does not count toward this project's compatibility status.
 
+## Current state — September 12, 2026
+
+The editor still does not open. The latest verified run passes checkerboard
+shader setup and fails in `ID2D1CommandList::Close` while recording the color
+button icon. Custom zero-input draw shaders now render real pixels, with
+75,824 focused checks passing independently on Windows and Wine. Startup,
+editing, save/reopen, native dialogs, and hardware performance remain open.
+
 ## Verified baseline — September 11, 2026
 
 The official Paint.NET 5.1.12 x64 portable archive passes its published SHA-256:
@@ -272,10 +280,37 @@ ID2D1RenderInfo.SetOutputBuffer while configuring its checkerboard draw transfor
 Custom transform rendering must be implemented alongside that state API; simply
 accepting the call would not produce a correct image. No editor is usable yet.
 
+## Custom source-effect shaders
+
+Zero-input `ID2D1DrawTransform` nodes now execute their loaded pixel shaders on
+Direct3D. Draw info owns the shader and constant data, validates output settings,
+and preserves settings after rejected shader selections. The generated vertex
+shader supplies the measured `SCENE_POSITION` coordinates. Bounds and dirty
+properties/DPI drive the effect callbacks; infinite source images are restricted
+to the requested visible region before allocation.
+
+Windows and Wine pass the same 75,824-check regression: source shaders and a
+source feeding Opacity, normal and cached output, all six precision settings,
+all three valid channel depths, negative bounds, crops, 96/192 DPI, constant
+ownership, HDR values, and stored alpha. Three standalone comparisons cover
+960 records and 55,296 rendered channels with no pixel/API-result mismatch at
+2e-5 tolerance. Redundant bounds-mapping counts differ for cached output.
+
+This implementation is limited to zero-input draw nodes. Input sampling,
+resource textures, general graphs, custom vertex processing and compute nodes
+are still unsupported. Arbitrary affine transforms and interpolation need
+native measurement beyond the tested identity transform and integer offsets.
+Cached output has measured channel behavior, but intermediate reuse and GPU
+performance still need optimization. Precision tests currently use a float32
+final target; other target formats need independent conformance coverage.
+
+The application advances from SetOutputBuffer to command-list closing.
+No Paint.NET editing session is yet verified.
+
 ## Observed remaining failures
 
-* ID2D1RenderInfo.SetOutputBuffer fails during the checkerboard effect's
-  initialization. Output format state and custom transform rendering need work.
+* `ID2D1CommandList::Close` fails while recording the color-button icon after
+  the application changes the device context's target within a drawing session.
 * General Direct2D transform graphs and remaining animation features remain open.
 * Retest Paint.NET's device feature probe after its effect-category initializer
   can finish. The EffectContext1 regression passes independently.

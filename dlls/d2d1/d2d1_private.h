@@ -838,6 +838,17 @@ struct d2d_render_info
 
     unsigned int mask;
     GUID pixel_shader;
+    struct d2d_device *device;
+    ID3D11PixelShader *ps;
+    ID3D11VertexShader *vs;
+    BYTE *constants;
+    UINT32 constants_size;
+    D2D1_BUFFER_PRECISION precision;
+    D2D1_CHANNEL_DEPTH depth;
+    D2D1_PIXEL_OPTIONS pixel_options;
+    BOOL cached;
+    UINT32 instruction_count;
+    UINT32 input_count;
 };
 
 struct d2d_transform_node
@@ -886,6 +897,8 @@ struct d2d_effect
     ID2D1Image **inputs;
     size_t inputs_size;
     size_t input_count;
+    D2D1_CHANGE_TYPE changes;
+    float render_dpi_x, render_dpi_y;
 };
 
 HRESULT d2d_histogram_draw(struct d2d_effect *effect, struct d2d_device_context *context,
@@ -918,6 +931,10 @@ HRESULT d2d_alpha_mask_render(struct d2d_effect *effect, struct d2d_device_conte
         const struct d2d_effect_image *inputs, struct d2d_effect_image *output);
 HRESULT d2d_effect_resolve_image(struct d2d_device_context *context, ID2D1Image *image,
         struct d2d_effect_image *output);
+HRESULT d2d_effect_resolve_image_region(struct d2d_device_context *context, ID2D1Image *image,
+        const D2D1_RECT_L *region, struct d2d_effect_image *output);
+HRESULT d2d_custom_effect_render(struct d2d_device_context *context, struct d2d_render_info *info,
+        BOOL linkable_output, struct d2d_effect_image *output);
 HRESULT d2d_effect_get_image_bounds(struct d2d_device_context *context, ID2D1Image *image, D2D1_RECT_F *bounds);
 HRESULT d2d_effect_draw_image(struct d2d_device_context *context, ID2D1Image *image,
         const D2D1_RECT_F *image_rect);

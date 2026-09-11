@@ -18,6 +18,7 @@
 
 #include "d2d1_private.h"
 #include <d3dcompiler.h>
+#include <float.h>
 
 WINE_DEFAULT_DEBUG_CHANNEL(d2d);
 
@@ -2686,12 +2687,54 @@ static void STDMETHODCALLTYPE d2d_device_context_ID2D1DeviceContext_DrawGlyphRun
     d2d_device_context_draw_glyph_run(context, baseline_origin, glyph_run, glyph_run_desc, brush, measuring_mode);
 }
 
+/* Find the visible source region before allocating generator-effect intermediates.
+ * The inverse transform is conservative; final rasterization performs exact clipping. */
+static void d2d_image_visible_region(struct d2d_device_context *context, const D2D1_POINT_2F *offset,
+        const D2D1_RECT_F *crop, D2D1_RECT_L *region)
+{
+    D2D1_MATRIX_3X2_F inverse;
+    D2D1_POINT_2F point;
+    D2D1_RECT_F visible = {FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX};
+    float sx = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 1 : context->desc.dpiX / 96.0f;
+    float sy = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 1 : context->desc.dpiY / 96.0f;
+    float dx = offset ? offset->x : 0, dy = offset ? offset->y : 0;
+    unsigned int i;
+
+    if (crop && (crop->left > crop->right || crop->top > crop->bottom)) crop = NULL;
+    if (!d2d_matrix_invert(&inverse, &context->drawing_state.transform))
+    {
+        memset(region, 0, sizeof(*region));
+        return;
+    }
+    for (i = 0; i < 4; ++i)
+    {
+        d2d_point_transform(&point, &inverse, (i & 1) ? context->pixel_size.width / sx : 0,
+                (i & 2) ? context->pixel_size.height / sy : 0);
+        point.x -= dx;
+        point.y -= dy;
+        if (crop) { point.x += crop->left; point.y += crop->top; }
+        d2d_rect_expand(&visible, &point);
+    }
+    if (crop)
+    {
+        visible.left = max(visible.left, crop->left);
+        visible.top = max(visible.top, crop->top);
+        visible.right = min(visible.right, crop->right);
+        visible.bottom = min(visible.bottom, crop->bottom);
+    }
+    region->left = max(INT_MIN, min(INT_MAX, floor((double)visible.left * sx)));
+    region->top = max(INT_MIN, min(INT_MAX, floor((double)visible.top * sy)));
+    region->right = max(region->left, min(INT_MAX, ceil((double)visible.right * sx)));
+    region->bottom = max(region->top, min(INT_MAX, ceil((double)visible.bottom * sy)));
+}
+
 static void STDMETHODCALLTYPE d2d_device_context_DrawImage(ID2D1DeviceContext6 *iface, ID2D1Image *image,
         const D2D1_POINT_2F *target_offset, const D2D1_RECT_F *image_rect, D2D1_INTERPOLATION_MODE interpolation_mode,
         D2D1_COMPOSITE_MODE composite_mode)
 {
     struct d2d_device_context *context = impl_from_ID2D1DeviceContext(iface);
     struct d2d_effect_image resolved;
+    D2D1_RECT_L region;
     HRESULT hr;
 
     TRACE("iface %p, image %p, target_offset %s, image_rect %s, interpolation_mode %#x, composite_mode %#x.\n",
@@ -2717,7 +2760,8 @@ static void STDMETHODCALLTYPE d2d_device_context_DrawImage(ID2D1DeviceContext6 *
     if (composite_mode != D2D1_COMPOSITE_MODE_SOURCE_OVER)
         FIXME("Unhandled composite mode %#x.\n", composite_mode);
 
-    hr = d2d_effect_resolve_image(context, image, &resolved);
+    d2d_image_visible_region(context, target_offset, image_rect, &region);
+    hr = d2d_effect_resolve_image_region(context, image, &region, &resolved);
     if (FAILED(hr))
     {
         d2d_device_context_set_error(context, hr);

@@ -2258,7 +2258,11 @@ static HRESULT d2d_effect_property_set_value(struct d2d_effect_properties *prope
     if (prop->index < 0x80000000 && !prop->set_function) return E_INVALIDARG;
 
     if (prop->set_function)
-        return prop->set_function(effect->impl_unknown, value, size);
+    {
+        HRESULT hr = prop->set_function(effect->impl_unknown, value, size);
+        if (SUCCEEDED(hr)) effect->changes |= D2D1_CHANGE_TYPE_PROPERTIES;
+        return hr;
+    }
 
     if (prop->size != size) return E_INVALIDARG;
 
@@ -3059,10 +3063,58 @@ static const ID2D1ImageVtbl d2d_effect_image_vtbl =
     d2d_effect_image_GetFactory,
 };
 
+static HRESULT d2d_effect_transform_graph_initialize_nodes(struct d2d_transform_graph *graph,
+        struct d2d_device *device);
+
+static HRESULT d2d_custom_effect_evaluate(struct d2d_effect *effect, struct d2d_device_context *context,
+        const D2D1_RECT_L *region, struct d2d_effect_image *output, BOOL bounds_only, BOOL linkable_output)
+{
+    struct d2d_transform_node *node = effect->graph->output;
+    ID2D1DrawTransform *transform;
+    D2D1_RECT_L opaque;
+    float dpi_x = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 96 : context->desc.dpiX;
+    float dpi_y = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 96 : context->desc.dpiY;
+    HRESULT hr;
+
+    if (!node) return S_FALSE;
+    if (FAILED(ID2D1TransformNode_QueryInterface(node->object, &IID_ID2D1DrawTransform, (void **)&transform)))
+        return S_FALSE;
+    ID2D1DrawTransform_Release(transform);
+    if (effect->input_count || node->input_count) return S_FALSE;
+    if (effect->render_dpi_x != dpi_x || effect->render_dpi_y != dpi_y)
+        effect->changes |= D2D1_CHANGE_TYPE_CONTEXT;
+    if (effect->changes)
+    {
+        if (FAILED(hr = ID2D1EffectImpl_PrepareForRender(effect->impl, effect->changes))) return hr;
+        effect->changes = D2D1_CHANGE_TYPE_NONE;
+        effect->render_dpi_x = dpi_x;
+        effect->render_dpi_y = dpi_y;
+    }
+    /* PrepareForRender is allowed to replace the transform graph. */
+    if (FAILED(hr = d2d_effect_transform_graph_initialize_nodes(effect->graph, context->device))) return hr;
+    node = effect->graph->output;
+    if (!node || node->input_count) return D2DERR_INVALID_GRAPH_CONFIGURATION;
+    if (FAILED(hr = ID2D1TransformNode_QueryInterface(node->object, &IID_ID2D1DrawTransform, (void **)&transform)))
+        return hr;
+    hr = ID2D1DrawTransform_MapInputRectsToOutputRect(transform, NULL, NULL, 0, &output->rect, &opaque);
+    ID2D1DrawTransform_Release(transform);
+    if (FAILED(hr) || bounds_only) return hr;
+    if (region)
+    {
+        output->rect.left = max(output->rect.left, region->left);
+        output->rect.top = max(output->rect.top, region->top);
+        output->rect.right = min(output->rect.right, region->right);
+        output->rect.bottom = min(output->rect.bottom, region->bottom);
+    }
+    output->rect.right = max(output->rect.left, output->rect.right);
+    output->rect.bottom = max(output->rect.top, output->rect.bottom);
+    return d2d_custom_effect_render(context, node->render_info, linkable_output, output);
+}
+
 /* Intermediate rectangles are in effect pixels and may have negative origins.
  * Frames own completed inputs; graph pointers are borrowed for this evaluation. */
 static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Image *image,
-        struct d2d_effect_image *output, BOOL bounds_only)
+        struct d2d_effect_image *output, BOOL bounds_only, const D2D1_RECT_L *region)
 {
     enum effect_kind { EFFECT_PASSTHROUGH, EFFECT_ALPHA_MASK, EFFECT_CONVOLVE_MATRIX, EFFECT_CONTRAST, EFFECT_EMBOSS, EFFECT_OPACITY } kind;
     struct evaluation_frame
@@ -3121,7 +3173,18 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
             else if (IsEqualGUID(&clsid, &CLSID_D2D1Opacity)) kind = EFFECT_OPACITY;
             else
             {
-                hr = depth ? E_NOTIMPL : S_FALSE;
+                const D2D1_RECT_L *requested = region;
+                BOOL linkable = TRUE;
+                for (i = 0; i < depth; ++i)
+                {
+                    if (frames[i].kind == EFFECT_CONVOLVE_MATRIX || frames[i].kind == EFFECT_EMBOSS)
+                        requested = NULL; /* These transforms require expanded input regions. */
+                    if (frames[i].kind != EFFECT_PASSTHROUGH && frames[i].kind != EFFECT_OPACITY)
+                        linkable = FALSE;
+                }
+                hr = d2d_custom_effect_evaluate(effect, context, requested, &result, bounds_only, linkable);
+                if (hr == S_OK) goto have_result;
+                if (hr == S_FALSE && depth) hr = E_NOTIMPL;
                 break;
             }
             if (effect->input_count != count)
@@ -3251,7 +3314,13 @@ done:
 HRESULT d2d_effect_resolve_image(struct d2d_device_context *context, ID2D1Image *image,
         struct d2d_effect_image *output)
 {
-    return d2d_effect_evaluate(context, image, output, FALSE);
+    return d2d_effect_evaluate(context, image, output, FALSE, NULL);
+}
+
+HRESULT d2d_effect_resolve_image_region(struct d2d_device_context *context, ID2D1Image *image,
+        const D2D1_RECT_L *region, struct d2d_effect_image *output)
+{
+    return d2d_effect_evaluate(context, image, output, FALSE, region);
 }
 
 HRESULT d2d_effect_get_image_bounds(struct d2d_device_context *context, ID2D1Image *image, D2D1_RECT_F *bounds)
@@ -3272,7 +3341,7 @@ HRESULT d2d_effect_get_image_bounds(struct d2d_device_context *context, ID2D1Ima
         ID2D1Bitmap_Release(bitmap);
         return S_OK;
     }
-    if ((hr = d2d_effect_evaluate(context, image, &result, TRUE)) != S_OK) return hr;
+    if ((hr = d2d_effect_evaluate(context, image, &result, TRUE, NULL)) != S_OK) return hr;
     scale_x = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 1 : 96.0f / context->desc.dpiX;
     scale_y = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 1 : 96.0f / context->desc.dpiY;
     bounds->left = result.rect.left * scale_x;
@@ -3570,7 +3639,13 @@ static ULONG STDMETHODCALLTYPE d2d_draw_info_Release(ID2D1DrawInfo *iface)
     TRACE("iface %p refcount %lu.\n", iface, refcount);
 
     if (!refcount)
+    {
+        if (render_info->ps) ID3D11PixelShader_Release(render_info->ps);
+        if (render_info->vs) ID3D11VertexShader_Release(render_info->vs);
+        ID2D1Device6_Release(&render_info->device->ID2D1Device6_iface);
+        free(render_info->constants);
         free(render_info);
+    }
 
     return refcount;
 }
@@ -3578,6 +3653,9 @@ static ULONG STDMETHODCALLTYPE d2d_draw_info_Release(ID2D1DrawInfo *iface)
 static HRESULT STDMETHODCALLTYPE d2d_draw_info_SetInputDescription(ID2D1DrawInfo *iface,
         UINT32 index, D2D1_INPUT_DESCRIPTION description)
 {
+    struct d2d_render_info *info = impl_from_ID2D1DrawInfo(iface);
+
+    if (index >= info->input_count) return E_INVALIDARG;
     FIXME("iface %p, index %u stub.\n", iface, index);
 
     return E_NOTIMPL;
@@ -3586,28 +3664,49 @@ static HRESULT STDMETHODCALLTYPE d2d_draw_info_SetInputDescription(ID2D1DrawInfo
 static HRESULT STDMETHODCALLTYPE d2d_draw_info_SetOutputBuffer(ID2D1DrawInfo *iface,
         D2D1_BUFFER_PRECISION precision, D2D1_CHANNEL_DEPTH depth)
 {
-    FIXME("iface %p, precision %u, depth %u stub.\n", iface, precision, depth);
+    struct d2d_render_info *info = impl_from_ID2D1DrawInfo(iface);
 
-    return E_NOTIMPL;
+    TRACE("iface %p, precision %u, depth %u.\n", iface, precision, depth);
+    if (precision > D2D1_BUFFER_PRECISION_32BPC_FLOAT
+            || (depth != D2D1_CHANNEL_DEPTH_DEFAULT && depth != D2D1_CHANNEL_DEPTH_1
+                && depth != D2D1_CHANNEL_DEPTH_4)) return E_INVALIDARG;
+    info->precision = precision;
+    info->depth = depth;
+    return S_OK;
 }
 
 static void STDMETHODCALLTYPE d2d_draw_info_SetCached(ID2D1DrawInfo *iface, BOOL is_cached)
 {
-    FIXME("iface %p, is_cached %d stub.\n", iface, is_cached);
+    struct d2d_render_info *info = impl_from_ID2D1DrawInfo(iface);
+    TRACE("iface %p, is_cached %d.\n", iface, is_cached);
+    info->cached = !!is_cached;
 }
 
 static void STDMETHODCALLTYPE d2d_draw_info_SetInstructionCountHint(ID2D1DrawInfo *iface,
         UINT32 count)
 {
-    FIXME("iface %p, count %u stub.\n", iface, count);
+    struct d2d_render_info *info = impl_from_ID2D1DrawInfo(iface);
+    TRACE("iface %p, count %u.\n", iface, count);
+    info->instruction_count = count;
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_draw_info_SetPixelShaderConstantBuffer(ID2D1DrawInfo *iface,
         const BYTE *buffer, UINT32 size)
 {
-    FIXME("iface %p, buffer %p, size %u stub.\n", iface, buffer, size);
+    struct d2d_render_info *info = impl_from_ID2D1DrawInfo(iface);
+    BYTE *copy = NULL;
 
-    return E_NOTIMPL;
+    TRACE("iface %p, buffer %p, size %u.\n", iface, buffer, size);
+    if (size)
+    {
+        if (!buffer) return E_INVALIDARG;
+        if (!(copy = malloc(size))) return E_OUTOFMEMORY;
+        memcpy(copy, buffer, size);
+    }
+    free(info->constants);
+    info->constants = copy;
+    info->constants_size = size;
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_draw_info_SetResourceTexture(ID2D1DrawInfo *iface,
@@ -3630,9 +3729,21 @@ static HRESULT STDMETHODCALLTYPE d2d_draw_info_SetPixelShader(ID2D1DrawInfo *ifa
         REFGUID id, D2D1_PIXEL_OPTIONS options)
 {
     struct d2d_render_info *render_info = impl_from_ID2D1DrawInfo(iface);
+    IUnknown *object;
+    ID3D11PixelShader *shader;
+    HRESULT hr;
 
     TRACE("iface %p, id %s, options %u.\n", iface, debugstr_guid(id), options);
 
+    if (options & ~D2D1_PIXEL_OPTIONS_TRIVIAL_SAMPLING) return E_INVALIDARG;
+    if (!d2d_device_get_indexed_object(&render_info->device->shaders, id, &object))
+        return HRESULT_FROM_WIN32(ERROR_NOT_FOUND);
+    hr = IUnknown_QueryInterface(object, &IID_ID3D11PixelShader, (void **)&shader);
+    IUnknown_Release(object);
+    if (FAILED(hr)) return E_INVALIDARG;
+    if (render_info->ps) ID3D11PixelShader_Release(render_info->ps);
+    render_info->ps = shader;
+    render_info->pixel_options = options;
     render_info->mask |= D2D_RENDER_INFO_PIXEL_SHADER;
     render_info->pixel_shader = *id;
     return S_OK;
@@ -3665,7 +3776,7 @@ static const ID2D1DrawInfoVtbl d2d_draw_info_vtbl =
     d2d_draw_info_SetVertexProcessing,
 };
 
-static HRESULT d2d_effect_render_info_create(struct d2d_render_info **obj)
+static HRESULT d2d_effect_render_info_create(struct d2d_device *device, struct d2d_render_info **obj)
 {
     struct d2d_render_info *object;
 
@@ -3674,6 +3785,8 @@ static HRESULT d2d_effect_render_info_create(struct d2d_render_info **obj)
 
     object->ID2D1DrawInfo_iface.lpVtbl = &d2d_draw_info_vtbl;
     object->refcount = 1;
+    object->device = device;
+    ID2D1Device6_AddRef(&device->ID2D1Device6_iface);
 
     *obj = object;
 
@@ -3703,7 +3816,8 @@ static bool d2d_transform_node_needs_render_info(const struct d2d_transform_node
     return false;
 }
 
-static HRESULT d2d_effect_transform_graph_initialize_nodes(struct d2d_transform_graph *graph)
+static HRESULT d2d_effect_transform_graph_initialize_nodes(struct d2d_transform_graph *graph,
+        struct d2d_device *device)
 {
     ID2D1DrawTransform *draw_transform;
     struct d2d_transform_node *node;
@@ -3711,10 +3825,12 @@ static HRESULT d2d_effect_transform_graph_initialize_nodes(struct d2d_transform_
 
     LIST_FOR_EACH_ENTRY(node, &graph->nodes, struct d2d_transform_node, entry)
     {
+        if (node->render_info) continue;
         if (d2d_transform_node_needs_render_info(node))
         {
-            if (FAILED(hr = d2d_effect_render_info_create(&node->render_info)))
+            if (FAILED(hr = d2d_effect_render_info_create(device, &node->render_info)))
                 return hr;
+            node->render_info->input_count = node->input_count;
         }
 
         if (SUCCEEDED(ID2D1TransformNode_QueryInterface(node->object, &IID_ID2D1DrawTransform,
@@ -3812,13 +3928,14 @@ HRESULT d2d_effect_create(struct d2d_device_context *context, const CLSID *effec
         return hr;
     }
 
-    if (FAILED(hr = d2d_effect_transform_graph_initialize_nodes(object->graph)))
+    if (FAILED(hr = d2d_effect_transform_graph_initialize_nodes(object->graph, context->device)))
     {
         WARN("Failed to initialize graph nodes, hr %#lx.\n", hr);
         ID2D1Effect_Release(&object->ID2D1Effect_iface);
         return hr;
     }
 
+    object->changes = D2D1_CHANGE_TYPE_GRAPH;
     *effect = &object->ID2D1Effect_iface;
 
     TRACE("Created effect %p.\n", *effect);

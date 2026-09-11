@@ -499,3 +499,40 @@ SetOutputBuffer during the checkerboard draw transform's initialization.
 Log: paintnet-20260912-001321-252991.log; crash: pdncrash.17.log. The earlier
 reflection diagnostic is preserved compressed as
 paintnet-20260912-000503-246950.log.gz. No application binary was changed.
+
+## Custom source draw transforms
+
+The new draw_transform case passes 75,824 checks on both Wine and native Windows
+with no todos, failures, or skips. It exercises 288 rendered configurations,
+including a nested Opacity effect and caller-owned constant data overwritten
+after upload. Native batch: 026-draw-tests-final. Wine log:
+draw-transform-tests-final.log. An earlier native assertion required exactly
+two bounds mappings; Windows may remap a cached node, so the regression now
+checks that bounds were mapped for both requests without requiring an internal
+call count. The pixel expectations did not change for that correction.
+
+Standalone direct, cached, and nested runs each compare 320 records
+and 18,432 color channels without pixel or API-result mismatch. Cached Windows
+runs map bounds three times versus Wine's two; the comparison reports these
+72 redundant-call differences separately. Maximum absolute pixel errors are
+below 1e-7. Reference batches: 020-draw-transform, 021-draw-cached,
+025-draw-nested-clean. Wine logs: draw-transform-final.log,
+draw-transform-cached-final.log, draw-transform-nested-final.log. The comparison
+script checks API results, bounds, callbacks, and every pixel. Batch 022 also
+measures the full scene-position vector (z=0, w=1). Batch 024 inherited a probe
+mode in the reference harness and is superseded by explicitly cleared modes in
+025; it is not used as conformance evidence.
+
+Stock Wine stops at the constant-buffer stub and cannot render the probe.
+Log: draw-transform-stock.log. The unchanged thirteen earlier focused cases
+pass 18,332 checks with one expected animation todo and no failures/skips.
+Log: custom-all-focused.log. The full Direct2D suite executes 17,157 checks,
+243 todos and one skip, with only the two existing unexpected todo successes
+at d2d1.c:15662. Log: d2d1-suite-custom-final.log. Unsupported input-bearing
+custom transforms retain the existing fallback; they are not claimed to render.
+
+All 312 original application binaries were verified before the next startup
+attempt. It passes checkerboard shader setup and fails in CommandList.Close
+while recording the color-button icon. Log:
+paintnet-20260912-003142-258762.log; crash: pdncrash.18.log. The shader path is
+validated independently; this application run has not yet displayed the editor.

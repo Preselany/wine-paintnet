@@ -15,6 +15,7 @@ SOURCES = \
 	command_list.c \
 	contrast.c \
 	convolve_matrix.c \
+	custom_effect.c \
 	dc_render_target.c \
 	device.c \
 	effect.c \
