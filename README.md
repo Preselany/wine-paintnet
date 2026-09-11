@@ -1,3 +1,14 @@
+# Wine for Paint.NET Classic
+
+This fork develops Wine compatibility for the **unmodified stable Windows
+release of Paint.NET**, using Wine's Direct2D implementation.
+
+Start with the [project guide](paintnet/README.md) and
+[compatibility status](paintnet/STATUS.md). This is an early development
+project; the normal Paint.NET release does not yet run successfully.
+
+The original Wine documentation follows.
+
 ## INTRODUCTION
 
 Wine is a program which allows running Microsoft Windows programs
