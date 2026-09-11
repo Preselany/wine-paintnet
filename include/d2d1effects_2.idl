@@ -18,6 +18,15 @@
 
 import "d2d1effects_1.idl";
 
+cpp_quote("DEFINE_GUID(CLSID_D2D1Emboss, 0xb1c5eb2b,0x0348,0x43f0,0x81,0x07,0x49,0x57,0xca,0xcb,0xa2,0xae);")
+
+typedef enum D2D1_EMBOSS_PROP
+{
+    D2D1_EMBOSS_PROP_HEIGHT = 0,
+    D2D1_EMBOSS_PROP_DIRECTION = 1,
+    D2D1_EMBOSS_PROP_FORCE_DWORD = 0xffffffff
+} D2D1_EMBOSS_PROP;
+
 cpp_quote("DEFINE_GUID(CLSID_D2D1Contrast, 0xb648a78a,0x0ed5,0x4f80,0xa9,0x4a,0x8e,0x82,0x5a,0xca,0x6b,0x77);")
 
 typedef enum D2D1_CONTRAST_PROP

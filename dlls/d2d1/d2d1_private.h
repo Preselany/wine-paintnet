@@ -792,6 +792,7 @@ void d2d_histogram_init_builtin(struct d2d_factory *factory);
 void d2d_alpha_mask_init_builtin(struct d2d_factory *factory);
 void d2d_bitmap_source_init_builtin(struct d2d_factory *factory);
 void d2d_contrast_init_builtin(struct d2d_factory *factory);
+void d2d_emboss_init_builtin(struct d2d_factory *factory);
 void d2d_convolve_matrix_init_builtin(struct d2d_factory *factory);
 HRESULT d2d_factory_create_device(ID2D1Factory1 *factory, IDXGIDevice *dxgi_device,
         bool allow_get_dxgi_device, REFIID iid, void **device);
@@ -904,6 +905,9 @@ HRESULT d2d_convolve_matrix_bounds(struct d2d_effect *effect, struct d2d_device_
 HRESULT d2d_bitmap_source_evaluate(struct d2d_effect *effect, struct d2d_device_context *context,
         struct d2d_effect_image *output, BOOL bounds_only);
 HRESULT d2d_contrast_render(struct d2d_effect *effect, struct d2d_device_context *context,
+        const struct d2d_effect_image *input, struct d2d_effect_image *output);
+HRESULT d2d_emboss_bounds(struct d2d_device_context *context, const D2D1_RECT_L *input, D2D1_RECT_L *output);
+HRESULT d2d_emboss_render(struct d2d_effect *effect, struct d2d_device_context *context,
         const struct d2d_effect_image *input, struct d2d_effect_image *output);
 HRESULT d2d_convolve_matrix_render(struct d2d_effect *effect, struct d2d_device_context *context,
         const struct d2d_effect_image *input, struct d2d_effect_image *output);

@@ -212,9 +212,23 @@ The full Wine drawing suite retains its recorded baseline, and the lookup
 upload diagnostic still passes. Histogram, Bitmap Source, and effect-context
 conformance differences remain; see REFERENCE.md. Emboss is still unimplemented.
 
+## Eighth Wine effect: Emboss
+
+Emboss now applies the measured grayscale surface-lighting filter on the GPU,
+including image-boundary stencils and the DPI resampling pass. Its 23 native
+pixel fixtures pass 4,919 checks on both Wine and Windows. A wider comparison
+matches 2,970 full readbacks and a separate 256-case 8x8 basis sweep. See
+REFERENCE.md for the numerical results and remaining DPI/caching limitations.
+All nine Wine cases total 15,662 passing checks; the existing drawing suite
+retains its stock baseline.
+
+Paint.NET was launched again with all 312 original binaries verified. It gets
+past Emboss and now fails on Opacity metadata
+(`811d79a4-de28-4454-8094-c64685f8bd4c`). The editor still has not opened.
+
 ## Observed remaining failures
 
-* Missing Emboss effect registration/implementation, now the first
+* Missing Opacity effect registration/implementation, now the first
   failing category lookup. Further builtin effects and general effect-graph evaluation
   still need implementation.
 * Retest Paint.NET's device feature probe after its effect-category initializer

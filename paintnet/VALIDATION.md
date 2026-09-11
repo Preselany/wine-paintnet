@@ -416,3 +416,28 @@ d2d1-suite-native-color-convolution.log and upload-native-color-convolution.log.
 
 The initial build needed the math header for the infinity test; the final build
 completed without warnings. No application binary was modified.
+
+## Emboss
+
+Stock Wine reaches five checks and fails effect creation because Emboss is not
+registered. The implementation passes 4,919 checks on Wine and Windows/WARP.
+The focused fixtures cover flat/impulse/colored/transparent/HDR/mixed inputs,
+height and direction changes, 96/192 DPI, pixel units, boundaries, bounds, and
+cycle recovery. Logs: emboss-stock.log, emboss-final.log; native batch
+012-emboss-fixtures.
+
+Full native comparison: 2,970 cases, 582,120 channels, zero mismatches at 0.00002
+tolerance, maximum error 0.00000164. Independent 8x8 basis: 256 cases, 102,400
+channels, zero mismatches, maximum error 0.000000119. Comparison logs:
+emboss-native-comparison.log and emboss-grid8-native-comparison.log.
+
+All nine focused cases pass 15,662 checks with zero skips. The existing suite
+remains at 17,151 checks, 243 todos, the same two unexpected todo successes at
+d2d1.c:15662, and one skip. No new failure was introduced. Final build succeeds;
+intermediate dimensions are checked before conversion/allocation. Logs:
+emboss-all-focused.log, d2d1-suite-emboss.log, build-emboss-final.log.
+
+The application run verifies all 312 binaries and advances to missing Opacity
+metadata. Log paintnet-20260911-233216-227449.log; crash pdncrash.12.log. It still
+fails in EffectCategories, and CreatePresentationFactory remains absent during
+diagnostic collection. This is not successful startup or application QA.

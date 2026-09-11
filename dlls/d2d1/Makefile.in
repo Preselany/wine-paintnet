@@ -19,6 +19,7 @@ SOURCES = \
 	device.c \
 	effect.c \
 	effect_render.c \
+	emboss.c \
 	factory.c \
 	geometry.c \
 	histogram.c \

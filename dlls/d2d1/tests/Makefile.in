@@ -9,5 +9,6 @@ SOURCES = \
 	d2d1.c \
 	effect_context.c \
 	effect_identity.c \
+	emboss.c \
 	histogram.c \
 	opacity_metadata.c

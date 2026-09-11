@@ -119,3 +119,37 @@ confirms that DPI changes include an internal resampling step, while pixel units
 restore the original sample grid. For the captured cases, requesting 32-bit
 float precision did not change the output. The exact implementation is still
 under development; these measurements do not establish a Wine Emboss result.
+
+## Emboss implementation and comparison
+
+Emboss now renders through Wine's builtin Direct2D compute path. Public-API
+impulse sweeps on 5x5 and 8x8 images recovered the same nine boundary stencils.
+Each coefficient is an exact multiple of 1/1024. For each input basis image,
+the normal components were recovered from lighting at 0/90/180/270 degrees;
+height was 0.125, light elevation 50 degrees, and grayscale channel weights
+were measured as 0.299/0.587/0.114. The formula and captured coefficients predict
+independent mixed-color/HDR images to within two millionths. This is behavioral
+measurement, not copied Microsoft implementation code.
+
+`emboss-reference.exe --basis` and `emboss-grid8-reference.exe --basis`
+reproduce those input sweeps. The normal probe runs all 2,970 cases. Compare
+complete native and Wine JSON files with:
+
+```sh
+./paintnet/compare-emboss.py windows.jsonl wine.jsonl
+```
+
+The comparison validates case identity/count, successful calls, complete finite
+readbacks, bounds, and every RGBA component. At the default 0.00002 tolerance,
+all 2,970 cases and 582,120 channels match. Maximum absolute error is 0.00000164.
+The separate 8x8 basis run matches all 256 cases and 102,400 channels, with a
+maximum difference of 0.000000119. The focused Wine/Windows test passes 4,919
+checks using 23 captured pixel fixtures, property clamps, and graph recovery.
+
+The implementation computes luminance gradients on the effect's 96-DPI grid,
+then applies diffuse lighting. DPI resampling uses a second GPU pass when
+needed. It preserves HDR input values and produces opaque grayscale output.
+Current limitations include feature level 11.0, no output cache, and the shared
+integer-pixel bounds representation. Fractional output extents or origins that
+do not align with the working grid return E_NOTIMPL. Tests cover 96/192 DPI and
+pixel units; this is not a claim of full arbitrary-DPI or hardware conformance.
