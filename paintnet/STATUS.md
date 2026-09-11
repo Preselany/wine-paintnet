@@ -226,11 +226,22 @@ Paint.NET was launched again with all 312 original binaries verified. It gets
 past Emboss and now fails on Opacity metadata
 (`811d79a4-de28-4454-8094-c64685f8bd4c`). The editor still has not opened.
 
+## Ninth Wine effect: Opacity
+
+Opacity now renders a clamped alpha multiplier through the GPU compute path.
+The same 470 checks pass on Wine and native Windows. All ten focused Wine
+cases pass 16,132 checks, and the existing drawing suite retains its baseline.
+
+Paint.NET now clears EffectCategories and reaches main-window construction.
+Its first exception is UIAnimationTransitionLibrary.CreateSmoothStopTransition,
+called while initializing the Colors panel. All 312 original binaries were
+verified unchanged; this is progress through startup, not a working editor.
+
 ## Observed remaining failures
 
-* Missing Opacity effect registration/implementation, now the first
-  failing category lookup. Further builtin effects and general effect-graph evaluation
-  still need implementation.
+* UIAnimationTransitionLibrary.CreateSmoothStopTransition returns E_NOTIMPL
+  while constructing the main window. Animation behavior needs implementation
+  and reference tests. Further effects and general graph evaluation remain open.
 * Retest Paint.NET's device feature probe after its effect-category initializer
   can finish. The EffectContext1 regression passes independently.
 * Missing `dcomp.dll!CreatePresentationFactory`, observed during diagnostics.

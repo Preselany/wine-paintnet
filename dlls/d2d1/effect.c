@@ -1913,6 +1913,7 @@ void d2d_effects_init_builtins(struct d2d_factory *factory)
     d2d_contrast_init_builtin(factory);
     d2d_bitmap_source_init_builtin(factory);
     d2d_emboss_init_builtin(factory);
+    d2d_opacity_init_builtin(factory);
 }
 
 /* Same syntax is used for value and default values. */
@@ -3063,7 +3064,7 @@ static const ID2D1ImageVtbl d2d_effect_image_vtbl =
 static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Image *image,
         struct d2d_effect_image *output, BOOL bounds_only)
 {
-    enum effect_kind { EFFECT_PASSTHROUGH, EFFECT_ALPHA_MASK, EFFECT_CONVOLVE_MATRIX, EFFECT_CONTRAST, EFFECT_EMBOSS } kind;
+    enum effect_kind { EFFECT_PASSTHROUGH, EFFECT_ALPHA_MASK, EFFECT_CONVOLVE_MATRIX, EFFECT_CONTRAST, EFFECT_EMBOSS, EFFECT_OPACITY } kind;
     struct evaluation_frame
     {
         struct d2d_effect *effect;
@@ -3117,6 +3118,7 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
             else if (IsEqualGUID(&clsid, &CLSID_D2D1ConvolveMatrix)) kind = EFFECT_CONVOLVE_MATRIX;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1Contrast)) kind = EFFECT_CONTRAST;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1Emboss)) kind = EFFECT_EMBOSS;
+            else if (IsEqualGUID(&clsid, &CLSID_D2D1Opacity)) kind = EFFECT_OPACITY;
             else
             {
                 hr = depth ? E_NOTIMPL : S_FALSE;
@@ -3215,6 +3217,11 @@ have_result:
             else if (frame->kind == EFFECT_CONTRAST)
             {
                 if (!bounds_only && FAILED(hr = d2d_contrast_render(frame->effect, context, frame->inputs, &result)))
+                    goto done;
+            }
+            else if (frame->kind == EFFECT_OPACITY)
+            {
+                if (!bounds_only && FAILED(hr = d2d_opacity_render(frame->effect, context, frame->inputs, &result)))
                     goto done;
             }
             else if (frame->kind == EFFECT_EMBOSS)

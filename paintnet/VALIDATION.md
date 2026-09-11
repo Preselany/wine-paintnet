@@ -441,3 +441,20 @@ The application run verifies all 312 binaries and advances to missing Opacity
 metadata. Log paintnet-20260911-233216-227449.log; crash pdncrash.12.log. It still
 fails in EffectCategories, and CreatePresentationFactory remains absent during
 diagnostic collection. This is not successful startup or application QA.
+
+## Opacity
+
+Stock Wine fails the metadata lookup with 0x80070490 after two checks. The
+implemented effect passes 470 checks on both Wine and Windows/WARP, with no
+skips. The initial Wine run caught an uninitialized default amount; setting
+the factory default to 1 corrected the failure. All ten focused Wine cases
+pass 16,132 checks. Logs: opacity-stock.log, opacity-first.log,
+opacity-all-focused.log; native batch 013-opacity.
+
+The broader drawing suite retains 17,151 checks, 243 todos, the same two
+unexpected todo successes, and one skip. Log: d2d1-suite-opacity.log.
+
+The application passes all category lookups and reaches MainForm construction.
+It then fails on CreateSmoothStopTransition while creating UserColorsControl.
+Log: paintnet-20260911-234242-236228.log; crash: pdncrash.13.log. The missing
+presentation-factory export still affects diagnostic collection.

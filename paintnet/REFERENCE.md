@@ -153,3 +153,17 @@ Current limitations include feature level 11.0, no output cache, and the shared
 integer-pixel bounds representation. Fractional output extents or origins that
 do not align with the working grid return E_NOTIMPL. Tests cover 96/192 DPI and
 pixel units; this is not a claim of full arbitrary-DPI or hardware conformance.
+
+## Opacity
+
+The Opacity effect multiplies premultiplied RGBA by its clamped [0,1] amount.
+The independent Windows/WARP run and Wine each pass 470 checks: defaults and
+clamping, stored alpha with PREMULTIPLIED/IGNORE bitmaps, HDR input, nested
+opacity, cropped output, 96/192 DPI, pixel units, graph errors and recovery,
+and source preservation. Native batch: 013-opacity.
+
+The implementation uses the existing GPU compute path and preserves input
+bounds even when opacity is zero. Like the other new compute effects it
+currently requires feature level 11.0 and uses uncached float intermediates.
+NaN-property behavior and arbitrary graph types are not established by this
+comparison. API documentation: [Microsoft Opacity effect](https://learn.microsoft.com/en-us/windows/win32/direct2d/opacity-effect).
