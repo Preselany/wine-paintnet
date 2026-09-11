@@ -85,6 +85,8 @@ static ULONG STDMETHODCALLTYPE d2d_bitmap_Release(ID2D1Bitmap1 *iface)
 
     if (!refcount)
     {
+        if (bitmap->color_context)
+            ID2D1ColorContext_Release(bitmap->color_context);
         if (bitmap->srv)
             ID3D11ShaderResourceView_Release(bitmap->srv);
         if (bitmap->rtv)
@@ -249,7 +251,10 @@ static HRESULT STDMETHODCALLTYPE d2d_bitmap_CopyFromMemory(ID2D1Bitmap1 *iface,
 
 static void STDMETHODCALLTYPE d2d_bitmap_GetColorContext(ID2D1Bitmap1 *iface, ID2D1ColorContext **context)
 {
-    FIXME("iface %p, context %p stub!\n", iface, context);
+    struct d2d_bitmap *bitmap = impl_from_ID2D1Bitmap1(iface);
+
+    TRACE("iface %p, context %p.\n", iface, context);
+    if ((*context = bitmap->color_context)) ID2D1ColorContext_AddRef(*context);
 }
 
 static D2D1_BITMAP_OPTIONS STDMETHODCALLTYPE d2d_bitmap_GetOptions(ID2D1Bitmap1 *iface)
@@ -407,6 +412,7 @@ static void d2d_bitmap_init(struct d2d_bitmap *bitmap, struct d2d_device_context
     bitmap->dpi_x = desc->dpiX;
     bitmap->dpi_y = desc->dpiY;
     bitmap->options = desc->bitmapOptions;
+    if ((bitmap->color_context = desc->colorContext)) ID2D1ColorContext_AddRef(bitmap->color_context);
 
     if (d2d_device_context_is_dxgi_target(context))
         ID3D11Resource_QueryInterface(resource, &IID_IDXGISurface, (void **)&bitmap->surface);

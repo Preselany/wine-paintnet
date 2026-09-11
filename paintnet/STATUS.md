@@ -8,12 +8,12 @@ managed renderer does not count toward this project's compatibility status.
 
 ## Current state — September 12, 2026
 
-The editor still does not open. The latest verified run passes checkerboard
-shader setup and command-list closing, then fails in `CreateColorContext` for
-sRGB while preparing color profiles. Custom source shaders and command-list
-recording now have independent Windows/Wine regression coverage. All fifteen
-focused project cases pass 102,184 checks, with one existing animation todo.
-Startup, editing, save/reopen, native dialogs, and hardware performance remain open.
+The editor still does not open. The latest verified run passes color-profile
+initialization, then fails because the Color Management effect is not registered.
+The new profile resource tests pass on both Windows and Wine; their generated
+ICC data has independently checked color semantics. The sixteen focused cases
+pass 105,695 Wine checks, with one existing animation todo. Startup, editing,
+save/reopen, native dialogs, and hardware performance remain open.
 
 ## Verified baseline — September 11, 2026
 
@@ -328,10 +328,32 @@ inputs to effect graphs remain separate, unimplemented rendering paths.
 Paint.NET passes this failure and next stops at sRGB color-context creation.
 The editor has still not opened.
 
+## Color-profile resources
+
+Direct2D now creates ICC, DXGI, and simple color contexts with factory ownership,
+profile-byte copying, buffer-size handling, and bitmap reference retention.
+WIC and filename loading recognize the measured sRGB model and scRGB profile ID;
+the memory API preserves CUSTOM. EXIF sRGB and Adobe RGB contexts are supported.
+Built-in profiles use Wine's bundled Little CMS and published color definitions,
+with cached ICC serialization; they do not copy Windows' profile data.
+
+The resource test passes 4,435 checks on Windows and 3,511 on Wine, with different
+counts because the buffer tests visit every profile byte. There are no failures,
+todos, or skips. A separate comparison transforms 3,216 RGB samples through
+exported ICC profiles into XYZ (9,648 channel comparisons). Unit-range differences
+are below 0.00032; extended-range differences are below 0.00064. These checks cover
+profile semantics, not the still-missing Direct2D Color Management renderer.
+Serialization sizes, timestamps, and metadata differ from Windows. The generated
+scRGB profile has its own ICC representation and is not recognized by Windows'
+reserved scRGB profile ID when reloaded through WIC; it remains a custom linear
+RGB ICC profile. Generic ICC validation uses Little CMS and is not full WCS conformance.
+
+Paint.NET passes ColorProfiles initialization, then stops in its Color Management
+wrapper because the underlying Direct2D effect is not registered.
+
 ## Observed remaining failures
 
-* `ID2D1DeviceContext::CreateColorContext` is unimplemented. The first request
-  is the standard sRGB space with no supplied ICC data, during ColorProfiles initialization.
+* The Color Management effect (`CLSID_D2D1ColorManagement`) is not implemented.
 * General Direct2D transform graphs and remaining animation features remain open.
 * Retest Paint.NET's device feature probe after its effect-category initializer
   can finish. The EffectContext1 regression passes independently.

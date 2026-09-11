@@ -64,7 +64,7 @@ DXVK still provides the application's Direct3D rendering. Additional Wine make t
 can be supplied after the work directory as development reaches other APIs.
 
 `test.sh` runs the COM, effect-context, Histogram, Opacity Metadata, Alpha Mask,
-Convolve Matrix, Contrast, Bitmap Source, Emboss, Opacity, custom source draw shaders, command-list recording, UIAnimation, and shader-requirement
+Convolve Matrix, Contrast, Bitmap Source, Emboss, Opacity, custom source draw shaders, command-list recording, color-profile resources, UIAnimation, and shader-requirement
 regressions by default. A test name can be supplied
 after the work directory. `test-upload.sh` checks actual lookup-table texels by
 reading the fork's Direct3D texture back. It uses Wine's private structure
@@ -74,7 +74,7 @@ test or a test of the separate LookupTable3D image effect.
 
 For an independent Windows reference, the focused test executable accepts
 `D2D1_TEST_WARP=1` to use Microsoft's software renderer. Leave it unset for the
-normal Wine/DXVK tests. `build-reference.sh` builds standalone Emboss, property, animation, shader-reflection, custom draw-transform, and command-list
+normal Wine/DXVK tests. `build-reference.sh` builds standalone Emboss, property, animation, shader-reflection, custom draw-transform, command-list, and color-profile
 probes under the work directory's `reference/` folder. Run them on Windows
 with its system Direct2D; they write JSON or labeled text records containing actual
 pixels, bounds, properties, and HRESULTs. See [REFERENCE.md](REFERENCE.md) for the measurement

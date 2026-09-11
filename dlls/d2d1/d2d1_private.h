@@ -438,12 +438,22 @@ struct d2d_mesh
 
 HRESULT d2d_mesh_create(ID2D1Factory *factory, struct d2d_mesh **mesh);
 
+HRESULT d2d_color_context_create(ID2D1Factory *factory, D2D1_COLOR_SPACE space,
+        const BYTE *profile, UINT32 size, ID2D1ColorContext **out);
+HRESULT d2d_color_context_create_dxgi(ID2D1Factory *factory, DXGI_COLOR_SPACE_TYPE space, ID2D1ColorContext1 **out);
+HRESULT d2d_color_context_create_simple(ID2D1Factory *factory, const D2D1_SIMPLE_COLOR_PROFILE *profile,
+        ID2D1ColorContext1 **out);
+HRESULT d2d_color_context_create_wic(ID2D1Factory *factory, IWICColorContext *wic, ID2D1ColorContext **out);
+HRESULT d2d_color_context_create_filename(ID2D1Factory *factory, const WCHAR *filename, ID2D1ColorContext **out);
+void d2d_color_context_cleanup(void);
+
 struct d2d_bitmap
 {
     ID2D1Bitmap1 ID2D1Bitmap1_iface;
     LONG refcount;
 
     ID2D1Factory *factory;
+    ID2D1ColorContext *color_context;
     ID3D11ShaderResourceView *srv;
     ID3D11RenderTargetView *rtv;
     IDXGISurface *surface;

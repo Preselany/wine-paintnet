@@ -2222,26 +2222,32 @@ static HRESULT STDMETHODCALLTYPE d2d_device_context_ID2D1DeviceContext_CreateBit
 static HRESULT STDMETHODCALLTYPE d2d_device_context_CreateColorContext(ID2D1DeviceContext6 *iface,
         D2D1_COLOR_SPACE space, const BYTE *profile, UINT32 profile_size, ID2D1ColorContext **color_context)
 {
-    FIXME("iface %p, space %#x, profile %p, profile_size %u, color_context %p stub!\n",
+    struct d2d_device_context *context = impl_from_ID2D1DeviceContext(iface);
+
+    TRACE("iface %p, space %#x, profile %p, profile_size %u, color_context %p\n",
             iface, space, profile, profile_size, color_context);
 
-    return E_NOTIMPL;
+    return d2d_color_context_create(context->factory, space, profile, profile_size, color_context);
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_device_context_CreateColorContextFromFilename(ID2D1DeviceContext6 *iface,
         const WCHAR *filename, ID2D1ColorContext **color_context)
 {
-    FIXME("iface %p, filename %s, color_context %p stub!\n", iface, debugstr_w(filename), color_context);
+    struct d2d_device_context *context = impl_from_ID2D1DeviceContext(iface);
 
-    return E_NOTIMPL;
+    TRACE("iface %p, filename %s, color_context %p\n", iface, debugstr_w(filename), color_context);
+
+    return d2d_color_context_create_filename(context->factory, filename, color_context);
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_device_context_CreateColorContextFromWicColorContext(ID2D1DeviceContext6 *iface,
         IWICColorContext *wic_color_context, ID2D1ColorContext **color_context)
 {
-    FIXME("iface %p, wic_color_context %p, color_context %p stub!\n", iface, wic_color_context, color_context);
+    struct d2d_device_context *context = impl_from_ID2D1DeviceContext(iface);
 
-    return E_NOTIMPL;
+    TRACE("iface %p, wic_color_context %p, color_context %p\n", iface, wic_color_context, color_context);
+
+    return d2d_color_context_create_wic(context->factory, wic_color_context, color_context);
 }
 
 static BOOL d2d_bitmap_check_options_with_surface(unsigned int options, unsigned int surface_options)
@@ -3288,17 +3294,21 @@ static void STDMETHODCALLTYPE d2d_device_context_DrawSvgDocument(ID2D1DeviceCont
 static HRESULT STDMETHODCALLTYPE d2d_device_context_CreateColorContextFromDxgiColorSpace(
         ID2D1DeviceContext6 *iface, DXGI_COLOR_SPACE_TYPE color_space, ID2D1ColorContext1 **color_context)
 {
-    FIXME("iface %p, color_space %u, color_context %p stub!\n", iface, color_space, color_context);
+    struct d2d_device_context *context = impl_from_ID2D1DeviceContext(iface);
 
-    return E_NOTIMPL;
+    TRACE("iface %p, color_space %u, color_context %p\n", iface, color_space, color_context);
+
+    return d2d_color_context_create_dxgi(context->factory, color_space, color_context);
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_device_context_CreateColorContextFromSimpleColorProfile(
         ID2D1DeviceContext6 *iface, const D2D1_SIMPLE_COLOR_PROFILE *simple_profile, ID2D1ColorContext1 **color_context)
 {
-    FIXME("iface %p, simple_profile %p, color_context %p stub!\n", iface, simple_profile, color_context);
+    struct d2d_device_context *context = impl_from_ID2D1DeviceContext(iface);
 
-    return E_NOTIMPL;
+    TRACE("iface %p, simple_profile %p, color_context %p\n", iface, simple_profile, color_context);
+
+    return d2d_color_context_create_simple(context->factory, simple_profile, color_context);
 }
 
 static void STDMETHODCALLTYPE d2d_device_context_BlendImage(ID2D1DeviceContext6 *iface, ID2D1Image *image,

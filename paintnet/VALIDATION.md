@@ -569,3 +569,46 @@ returns E_NOTIMPL. Latest log: paintnet-20260912-010831-279604.log;
 crash: pdncrash.20.log. The first run showing that advance was
 paintnet-20260912-005413-271576.log / pdncrash.19.log. No working editor or file
 round trip is claimed.
+
+## Color-profile resources
+
+The color_context regression passes 4,435 checks on Windows (batch
+040-color-tests-expanded) and 3,511 on Wine (color-context-tests-final.log),
+with no failures, todos, or skips. Counts differ because complete buffers are
+checked byte by byte and the generated ICC profiles have different sizes.
+Stock Wine reaches 87 checks and fails 71: color-context-tests-stock-final.log.
+Coverage includes ICC copying and zeroed buffer tails, COM identity/factory
+ownership, bitmap retention, DXGI enum validation, simple profiles, WIC EXIF,
+invalid profiles, memory-versus-WIC/file classification, and trailing file data.
+
+Reference batches 035 through 038 progressively measure these interfaces.
+Batch 034 terminates on a NULL custom ICC input on Windows; that invalid call
+was excluded from later probes. Batch 039 exposed native unsupported-QI output
+preservation; the final implementation and batch 040 include that correction.
+The original application's standard calls do not use those invalid inputs.
+
+compare-color-profiles.py reads three exported profiles from each standalone
+ICC probe, then uses the same host Little CMS engine for an independent
+RGB-to-XYZ comparison. Reference: 038-color-context-classification; Wine:
+color-context-icc-final.log. It checks 729 unit-range and 343 extended-range
+colors per profile, including negative values and values above one. All 9,648
+XYZ channels pass. Maximum absolute errors are 0.000198365 for sRGB,
+0.000639797 for scRGB, and 0.000070096 for Adobe RGB. Tolerances are 0.0005 in
+the unit range and 0.001 for extended values. Windows and Wine profile bytes,
+sizes, dates, and metadata are not identical. This does not test Direct2D's
+Color Management image effect or GPU rendering.
+
+The earlier fifteen focused cases still pass 102,184 checks with one existing
+animation todo: color-all-focused.log. Together with color_context, the sixteen
+cases pass 105,695 Wine checks without failures or skips. The broader Direct2D
+suite keeps its prior result: 17,157 checks, 237 todos, one skip, and only the two
+known unexpected todo successes at d2d1.c:15659. Log:
+d2d1-suite-color-final.log. An earlier wrapper run was superseded after the
+script was edited while Bash was reading it; the final run uses a stable script.
+
+The unchanged app verifies all 312 runtime files, passes color-profile creation,
+and stops at the missing Color Management effect registration. Log:
+paintnet-20260912-012518-285482.log; crash: pdncrash.21.log. The later traceback
+also still encounters the missing dcomp presentation-factory export. The editor
+has not opened; no editing, save/reopen, native chooser, or hardware optimization
+milestone is claimed.

@@ -6,6 +6,7 @@ SOURCES = \
 	bitmap_source.c \
 	contrast.c \
 	command_list_state.c \
+	color_context.c \
 	convolve_matrix.c \
 	d2d1.c \
 	draw_transform.c \

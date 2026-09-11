@@ -265,3 +265,37 @@ python3 paintnet/compare-command-list.py windows.log wine.log
 The focused command_list_state test includes the measured ordered records and
 compact palette-based pixel fixtures. It checks recording and public-sink
 replay; automatic Direct2D command-list rasterization still needs implementation.
+
+## Color-profile resources
+
+color-context-reference.exe measures ICC/DXGI/simple creation, QI and factory
+ownership, profile buffers, WIC EXIF input, filenames, and bitmap references.
+color-context-icc-reference.exe additionally exports three complete ICC profiles
+and measures copying, WIC/file classification, model/ID mutations, and trailing
+data. Both use D2D1_TEST_WARP=1 on Windows and system Direct2D. Use an isolated
+working directory; they write disposable .icc files there.
+
+The color_context regression checks portable API behavior. It deliberately
+does not require a Windows-specific ICC size, serialization, or timestamp.
+Unsupported QI preserves the output pointer on the native color-context object.
+WIC/file classification differs from the memory-creation API; see the regression
+for the independently measured model/ID precedence.
+
+Compare the color semantics of the exported profiles with:
+
+```sh
+python3 paintnet/compare-color-profiles.py windows-icc.log wine-icc.log
+```
+
+The comparison requires host liblcms2. It uses the same engine for both profiles,
+relative colorimetric RGB-to-XYZ transforms, and no optimization. It rejects
+incomplete logs, rejected profiles, non-finite values, and out-of-tolerance
+channels. This measures the profiles themselves, not Direct2D image rendering.
+Generated profile metadata and the reserved Windows scRGB profile ID differ;
+these are documented compatibility limits, not hidden by a byte-equality claim.
+
+API documentation: [CreateColorContext](https://learn.microsoft.com/en-us/windows/win32/api/d2d1_1/nf-d2d1_1-id2d1devicecontext-createcolorcontext),
+[GetProfile](https://learn.microsoft.com/en-us/windows/win32/api/d2d1_1/nf-d2d1_1-id2d1colorcontext-getprofile),
+and [DXGI color contexts](https://learn.microsoft.com/en-us/windows/win32/api/d2d1_3/nf-d2d1_3-id2d1devicecontext5-createcolorcontextfromdxgicolorspace).
+Native measurements establish the discrepancies from the documented memory-API
+classification and unsupported-QI behavior.
