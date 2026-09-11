@@ -301,3 +301,37 @@ Evidence outside the repository: `logs/convolve-stock.log`,
 `logs/d2d1-suite-convolve.log`, `logs/d2d1-suite-convolve-final.log`,
 `logs/build-convolve-final.log`, `logs/paintnet-20260911-215307-179341.log`,
 and `app/Paint.NET App Files/CrashLogs/pdncrash.8.log`.
+
+
+## Contrast
+
+Contrast's focused test passes **332 checks** for positive/negative/zero amount,
+input clamping, HDR values, premultiplied transparency, ignored alpha, source
+preservation, nested convolution with a negative image origin, context DPI,
+and pixel units. The eight amount/clamp cases compare actual floating-point
+texture readback against a small transfer-value table. Stock Wine stops at the
+missing effect metadata: two checks, one failure.
+
+The transfer uses two quadratic pieces with matching midpoint slope. The graph
+in Microsoft's documentation was used to infer the maximum-positive coefficients;
+linear interpolation from identity across the amount parameter and extrapolation
+outside [0,1] are implementation assumptions. These pixel tests validate that
+implementation, not native Windows equivalence. Native comparison is required
+before claiming exact Contrast conformance. Feature-level 10 support, intermediate
+precision selection, and caching are not implemented.
+
+Reference: Microsoft's [Contrast description and graph](https://learn.microsoft.com/en-us/windows/win32/direct2d/contrast-effect)
+and [Win2D property defaults and validation](https://github.com/microsoft/Win2D/blob/winappsdk/main/winrt/lib/effects/generated/ContrastEffect.cpp).
+
+All seven focused cases pass **2,590 checks, zero failures, zero skips**. The
+full suite reports 17,151 checks, 243 todos, two previously recorded unexpected
+todo successes, and one reference-device skip, matching stock. The new module
+build has no compiler warnings or errors. The application launch verifies 312
+unchanged binaries and advances from Contrast to missing Bitmap Source
+(`5fb6c24d-c6dd-4231-9404-50f4d5c3252d`); its crash is still in EffectCategories.
+The missing presentation-factory export remains in diagnostic collection.
+
+Evidence outside the repository: `logs/build-contrast-tests.log`,
+`logs/contrast-stock.log`, `logs/contrast-first.log`, `logs/contrast-final.log`,
+`logs/d2d1-suite-contrast.log`, `logs/paintnet-20260911-220706-187549.log`, and
+`app/Paint.NET App Files/CrashLogs/pdncrash.9.log`.

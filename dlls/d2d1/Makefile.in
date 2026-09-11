@@ -12,6 +12,7 @@ SOURCES = \
 	bitmap_render_target.c \
 	brush.c \
 	command_list.c \
+	contrast.c \
 	convolve_matrix.c \
 	dc_render_target.c \
 	device.c \

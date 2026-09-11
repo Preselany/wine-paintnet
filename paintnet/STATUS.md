@@ -141,9 +141,26 @@ The unchanged application passes the Convolve Matrix metadata lookup. Its next
 missing registration is Contrast (`b648a78a-0ed5-4f80-a94a-8e825aca6b77`). It
 still crashes during effect-category initialization; no editor has opened.
 
+## Sixth Wine change: Contrast
+
+Contrast now has its own properties and a compute shader for the documented
+piecewise-quadratic color adjustment, with optional input clamping and alpha
+preservation. It accepts the supported input graphs and preserves their image
+origin. Seven focused cases pass 2,590 checks, including 332 for Contrast; the
+full Direct2D suite still matches the recorded stock-Wine baseline.
+
+The curve coefficients and interpolation over the Contrast parameter were
+inferred from Microsoft's graph and description. Native Windows numeric output
+has not been captured, so exact transfer-function conformance is still open.
+The implemented path requires feature level 11.0 and uses float intermediates.
+
+All 312 application binaries remain unchanged. Paint.NET now passes Contrast
+metadata and next fails on Bitmap Source
+(`5fb6c24d-c6dd-4231-9404-50f4d5c3252d`). The editor still has not opened.
+
 ## Observed remaining failures
 
-* Missing Contrast effect registration/implementation, now the first
+* Missing Bitmap Source effect registration/implementation, now the first
   failing category lookup. Further builtin effects and general effect-graph evaluation
   still need implementation.
 * Retest Paint.NET's device feature probe after its effect-category initializer

@@ -1910,6 +1910,7 @@ void d2d_effects_init_builtins(struct d2d_factory *factory)
     d2d_histogram_init_builtin(factory);
     d2d_alpha_mask_init_builtin(factory);
     d2d_convolve_matrix_init_builtin(factory);
+    d2d_contrast_init_builtin(factory);
 }
 
 /* Same syntax is used for value and default values. */
@@ -3060,7 +3061,7 @@ static const ID2D1ImageVtbl d2d_effect_image_vtbl =
 static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Image *image,
         struct d2d_effect_image *output, BOOL bounds_only)
 {
-    enum effect_kind { EFFECT_PASSTHROUGH, EFFECT_ALPHA_MASK, EFFECT_CONVOLVE_MATRIX } kind;
+    enum effect_kind { EFFECT_PASSTHROUGH, EFFECT_ALPHA_MASK, EFFECT_CONVOLVE_MATRIX, EFFECT_CONTRAST } kind;
     struct evaluation_frame
     {
         struct d2d_effect *effect;
@@ -3106,6 +3107,7 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
             if (effect->impl->lpVtbl == &opacity_metadata_vtbl) kind = EFFECT_PASSTHROUGH;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1AlphaMask)) { kind = EFFECT_ALPHA_MASK; count = 2; }
             else if (IsEqualGUID(&clsid, &CLSID_D2D1ConvolveMatrix)) kind = EFFECT_CONVOLVE_MATRIX;
+            else if (IsEqualGUID(&clsid, &CLSID_D2D1Contrast)) kind = EFFECT_CONTRAST;
             else
             {
                 hr = depth ? E_NOTIMPL : S_FALSE;
@@ -3193,6 +3195,11 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
                 if (FAILED(hr = d2d_convolve_matrix_bounds(frame->effect, context, &frame->inputs[0].rect, &result.rect)))
                     goto done;
                 if (!bounds_only && FAILED(hr = d2d_convolve_matrix_render(frame->effect, context, frame->inputs, &result)))
+                    goto done;
+            }
+            else if (frame->kind == EFFECT_CONTRAST)
+            {
+                if (!bounds_only && FAILED(hr = d2d_contrast_render(frame->effect, context, frame->inputs, &result)))
                     goto done;
             }
             else
