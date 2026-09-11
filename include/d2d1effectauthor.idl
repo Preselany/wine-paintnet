@@ -45,6 +45,16 @@ typedef enum D2D1_FEATURE
     D2D1_FEATURE_FORCE_DWORD = 0xffffffff
 } D2D1_FEATURE;
 
+typedef struct D2D1_FEATURE_DATA_DOUBLES
+{
+    BOOL doublePrecisionFloatShaderOps;
+} D2D1_FEATURE_DATA_DOUBLES;
+
+typedef struct D2D1_FEATURE_DATA_D3D10_X_HARDWARE_OPTIONS
+{
+    BOOL computeShaders_Plus_RawAndStructuredBuffers_Via_Shader_4_x;
+} D2D1_FEATURE_DATA_D3D10_X_HARDWARE_OPTIONS;
+
 typedef struct D2D1_PROPERTY_BINDING
 {
     const WCHAR *propertyName;

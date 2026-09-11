@@ -29,7 +29,7 @@
 #include <math.h>
 #define COBJMACROS
 #include "d2d1_3.h"
-#include "d2d1effectauthor.h"
+#include "d2d1effectauthor_1.h"
 #include "d3d11_1.h"
 #ifdef D2D1_INIT_GUID
 #include "initguid.h"
@@ -693,9 +693,22 @@ BOOL d2d_device_get_indexed_object(struct d2d_indexed_objects *objects, const GU
         IUnknown **object);
 void d2d_device_indexed_objects_clear(struct d2d_indexed_objects *objects);
 
+struct d2d_lookup_table
+{
+    ID2D1LookupTable3D ID2D1LookupTable3D_iface;
+    LONG refcount;
+    ID2D1Factory *factory;
+    ID3D11Texture3D *texture;
+    ID3D11ShaderResourceView *view;
+};
+
+HRESULT d2d_lookup_table_create(struct d2d_device_context *context, D2D1_BUFFER_PRECISION precision,
+        const UINT32 *extents, const BYTE *data, UINT32 data_count, const UINT32 *strides,
+        ID2D1LookupTable3D **lookup_table);
+
 struct d2d_effect_context
 {
-    ID2D1EffectContext ID2D1EffectContext_iface;
+    ID2D1EffectContext1 ID2D1EffectContext1_iface;
     LONG refcount;
 
     struct d2d_device_context *device_context;

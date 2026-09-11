@@ -2981,10 +2981,12 @@ static HRESULT STDMETHODCALLTYPE d2d_device_context_CreateLookupTable3D(ID2D1Dev
         D2D1_BUFFER_PRECISION precision, const UINT32 *extents, const BYTE *data,
         UINT32 data_count, const UINT32 *strides, ID2D1LookupTable3D **lookup_table)
 {
-    FIXME("iface %p, precision %u, extents %p, data %p, data_count %u, strides %p, lookup_table %p stub!\n",
+    struct d2d_device_context *context = impl_from_ID2D1DeviceContext(iface);
+
+    TRACE("iface %p, precision %u, extents %p, data %p, data_count %u, strides %p, lookup_table %p.\n",
             iface, precision, extents, data, data_count, strides, lookup_table);
 
-    return E_NOTIMPL;
+    return d2d_lookup_table_create(context, precision, extents, data, data_count, strides, lookup_table);
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_device_context_CreateImageSourceFromDxgi(ID2D1DeviceContext6 *iface,

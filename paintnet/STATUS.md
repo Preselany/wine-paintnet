@@ -41,11 +41,38 @@ effect now reaches a real `ID2D1EffectContext1` query and fails cleanly with
 `E_NOINTERFACE`; the prior disposal access violation was not observed in that
 run. This is a partial API correction, not evidence of successful rendering.
 
+## Second Wine change: effect-context interface and lookup-table resources
+
+Wine now exposes `ID2D1EffectContext1` with the same COM identity as its base
+interface. Its inherited calls use the existing context implementation. The
+new `CreateLookupTable3D` method and the device-context entry point share an
+implementation that uploads the supplied RGBA data into an immutable Direct3D
+3D texture and creates a shader resource view. It supports the five explicit
+buffer precisions and validates row/plane strides and data bounds before upload.
+
+The focused test passes 71 checks; stock Wine and the previous fork revision
+each fail seven of the 19 checks they can reach. The original identity test
+still passes 26 checks. A separate internal diagnostic reads the actual texture
+back and verifies 120 rows across five formats with tight and padded layouts,
+after overwriting the caller's source buffer.
+
+This implements resource creation, not the separate `CLSID_D2D1LookupTable3D`
+image effect. No 2D-texture fallback for lower feature-level devices is provided.
+Existing unimplemented methods inherited from the base effect context remain
+unimplemented. Native Windows conformance, including exact invalid-argument
+results and dimension limits, still needs validation.
+
+The application was retested with all 312 binaries verified unchanged. This
+run failed on Histogram metadata before reaching the custom feature effect's
+initialization; the error window also encountered the same DispatcherQueue
+activation failure. The new context path is verified by the focused test,
+not by a successful Paint.NET startup.
+
 ## Observed remaining failures
 
 * Missing Histogram effect registration/implementation. Metadata alone must
   not be treated as a functioning histogram renderer.
-* Missing `ID2D1EffectContext1`, queried by Paint.NET's device feature probe.
+* Retest Paint.NET's device feature probe after Histogram initialization is fixed.
 * `Windows.System.DispatcherQueue` activation fails with `REGDB_E_CLASSNOTREG`
   when Paint.NET creates display-aware windows, including error-reporting UI.
 * The broader Direct2D drawing/effect pipeline, animation, and composition

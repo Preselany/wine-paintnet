@@ -42,6 +42,7 @@ pinned by SHA-256; the application manifest is checked before each launch.
 ./paintnet/build.sh /absolute/path/to/work
 ./paintnet/install-modules.sh /absolute/path/to/work d2d1
 DISPLAY=:93 ./paintnet/test.sh /absolute/path/to/work
+DISPLAY=:93 ./paintnet/test-upload.sh /absolute/path/to/work
 DISPLAY=:93 ./paintnet/run.sh /absolute/path/to/work /absolute/path/to/image.png
 ```
 
@@ -59,6 +60,13 @@ its DLLs; close the development application normally before using it.
 
 The initial build compiles `d2d1.dll` and its tests. Additional Wine make targets
 can be supplied after the work directory as development reaches other APIs.
+
+`test.sh` runs both focused regressions by default. A test name can be supplied
+after the work directory. `test-upload.sh` checks actual lookup-table texels by
+reading the fork's Direct3D texture back. It uses Wine's private structure
+layout, verifies that the installed module matches the build, and must only
+run against this checkout's module. It is not a native Windows conformance
+test or a test of the separate LookupTable3D image effect.
 
 Official application: https://github.com/paintdotnet/release/releases/tag/v5.1.12
 

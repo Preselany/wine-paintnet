@@ -18,6 +18,7 @@ SOURCES = \
 	geometry.c \
 	hwnd_render_target.c \
 	layer.c \
+	lookup_table.c \
 	mesh.c \
 	sprite_batch.c \
 	state_block.c \

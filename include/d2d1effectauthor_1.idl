@@ -1,0 +1,23 @@
+/* Direct2D effect authoring interfaces introduced in Windows 10.
+ * SPDX-License-Identifier: LGPL-2.1-or-later
+ */
+
+import "d2d1effectauthor.idl";
+import "d2d1_3.idl";
+
+[
+    object,
+    uuid(577ad2a0-9fc7-4dda-8b18-dab810140052),
+    local,
+]
+interface ID2D1EffectContext1 : ID2D1EffectContext
+{
+    HRESULT CreateLookupTable3D(
+        [in] D2D1_BUFFER_PRECISION precision,
+        [in] const UINT32 *extents,
+        [in] const BYTE *data,
+        [in] UINT32 data_count,
+        [in] const UINT32 *strides,
+        [out] ID2D1LookupTable3D **lookup_table
+    );
+}
