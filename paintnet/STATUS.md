@@ -898,3 +898,45 @@ The full current focused suite reports 51 test summaries, 563,283 checks plus
 There are 361 total known TODOs. The mask-isolation probe independently matches
 Windows' alpha samples exactly, with maximum RGB error below 0.000000061;
 opacity-mask sampling was not the source of the black label backgrounds.
+
+## Layered document roundtrip — September 12
+
+The official editor added a second layer to the earlier brush image, filled that
+layer, and saved a `.pdn` document. After closing and reopening the document, the
+Layers panel retained both layers and hiding the upper layer revealed the original
+brush image. Exporting that background to PNG preserves all 480,000 RGBA pixels
+of the 800 × 600 original exactly. The PDN is 11,032 bytes, SHA-256
+`74bbe37edd2c8f4429b01e95c6d2ddd8551ec6ff9b39add912aee8d218c6ce6a`.
+The local validation report is `work/classic/validation/layered-roundtrip-report.json`.
+This proves the tested two-layer workflow; broader layer features and other
+file types remain to be tested.
+
+## Glyph bitmap cache rendering modes — September 12
+
+The DirectWrite glyph bitmap cache previously used only font size, glyph index,
+and measuring mode as its key. Aliased and antialiased rasterizations collided
+even though their pixels and buffer pitches differ. Drawing aliased text before
+antialiased text produced incorrect pixels in all 72 tested mode-switch cases.
+In the opposite direction the cached grayscale allocation could also exceed the
+new monochrome destination buffer. This was a separate issue from the earlier
+DC-background label fix.
+
+The key now includes rendering mode. A failed cache allocation also leaves the
+entry eligible for a later retry instead of marking a null bitmap as valid. The
+`glyph_bitmap` regression compares complete textures with freshly created isolated
+font faces, exercising five rendering modes, three font sizes, regular/bold/oblique
+faces, all initial modes, and repeated transitions. Its embedded test font makes
+the workflow independent of system font installation. Windows and Wine each
+pass 23,765 checks, with no failures, TODOs, or skips. This establishes cache
+independence, not cross-platform pixel identity for every glyph rasterizer.
+
+The full current suite reports 52 summaries, 587,048 checks plus 118 silenced
+TODO checks, 361 total known TODOs, and no ordinary/flaky failures or skips.
+The upstream DirectWrite font and layout suites also have no ordinary failures:
+324,148 and 76,689 reported checks respectively, with 5,855 total existing TODOs
+and four skips across those two suites.
+
+The subsequent real text-tool test exposes another missing operation: moving
+the text cursor onto the canvas calls a geometry `Widen` path that returns
+`E_NOTIMPL` (`pdncrash.71.log`). Text editing remains unverified; the glyph-cache
+fix does not claim to resolve this separate outline-geometry failure.

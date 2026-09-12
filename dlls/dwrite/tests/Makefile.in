@@ -5,6 +5,7 @@ SOURCES = \
 	analyzer.c \
 	font.c \
 	font_cache.c \
+	glyph_bitmap.c \
 	layout.c \
 	resource.rc \
 	wine_test.sfd
