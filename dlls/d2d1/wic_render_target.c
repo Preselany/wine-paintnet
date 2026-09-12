@@ -27,6 +27,37 @@ static inline struct d2d_wic_render_target *impl_from_IUnknown(IUnknown *iface)
     return CONTAINING_RECORD(iface, struct d2d_wic_render_target, IUnknown_iface);
 }
 
+static HRESULT d2d_wic_render_target_begin_draw(IUnknown *outer_unknown)
+{
+    struct d2d_wic_render_target *render_target = impl_from_IUnknown(outer_unknown);
+    IWICBitmapLock *lock;
+    ID3D10Resource *resource;
+    ID3D10Device *device;
+    UINT size, stride;
+    BYTE *pixels;
+    HRESULT hr;
+
+    /* The caller may change the WIC bitmap between drawing batches. */
+    if (FAILED(hr = IWICBitmap_Lock(render_target->bitmap, NULL, WICBitmapLockRead, &lock))) return hr;
+    if (SUCCEEDED(hr = IWICBitmapLock_GetStride(lock, &stride)))
+        hr = IWICBitmapLock_GetDataPointer(lock, &size, &pixels);
+    if (SUCCEEDED(hr) && ((UINT64)render_target->width * render_target->bpp > stride
+            || (UINT64)(render_target->height - 1) * stride
+                + (UINT64)render_target->width * render_target->bpp > size))
+        hr = E_INVALIDARG;
+    if (SUCCEEDED(hr))
+        hr = IDXGISurface_QueryInterface(render_target->dxgi_surface, &IID_ID3D10Resource, (void **)&resource);
+    if (SUCCEEDED(hr))
+    {
+        ID3D10Resource_GetDevice(resource, &device);
+        ID3D10Device_UpdateSubresource(device, resource, 0, NULL, pixels, stride, 0);
+        ID3D10Device_Release(device);
+        ID3D10Resource_Release(resource);
+    }
+    IWICBitmapLock_Release(lock);
+    return hr;
+}
+
 static HRESULT d2d_wic_render_target_present(IUnknown *outer_unknown)
 {
     struct d2d_wic_render_target *render_target = impl_from_IUnknown(outer_unknown);
@@ -96,7 +127,7 @@ static HRESULT d2d_wic_render_target_present(IUnknown *outer_unknown)
     IWICBitmapLock_Release(bitmap_lock);
 
 end:
-    return S_OK;
+    return hr;
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_wic_render_target_QueryInterface(IUnknown *iface, REFIID iid, void **out)
@@ -147,6 +178,7 @@ static const struct IUnknownVtbl d2d_wic_render_target_vtbl =
 static const struct d2d_device_context_ops d2d_wic_render_target_ops =
 {
     d2d_wic_render_target_present,
+    d2d_wic_render_target_begin_draw,
 };
 
 static HRESULT d2d_wic_resolve_pixel_format(D2D1_PIXEL_FORMAT *pixel_format,
@@ -159,19 +191,27 @@ static HRESULT d2d_wic_resolve_pixel_format(D2D1_PIXEL_FORMAT *pixel_format,
     }
     formats[] =
     {
+        { &GUID_WICPixelFormat8bppAlpha, { DXGI_FORMAT_A8_UNORM, D2D1_ALPHA_MODE_STRAIGHT } },
         { &GUID_WICPixelFormat32bppBGR, { DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE } },
         { &GUID_WICPixelFormat32bppRGB, { DXGI_FORMAT_R8G8B8A8_UNORM, D2D1_ALPHA_MODE_IGNORE } },
         { &GUID_WICPixelFormat32bppPBGRA, { DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED } },
         { &GUID_WICPixelFormat32bppPRGBA, { DXGI_FORMAT_R8G8B8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED } },
+        { &GUID_WICPixelFormat64bppPRGBAHalf, { DXGI_FORMAT_R16G16B16A16_FLOAT, D2D1_ALPHA_MODE_PREMULTIPLIED } },
+        { &GUID_WICPixelFormat128bppPRGBAFloat, { DXGI_FORMAT_R32G32B32A32_FLOAT, D2D1_ALPHA_MODE_PREMULTIPLIED } },
     };
-
-    if (pixel_format->format != DXGI_FORMAT_UNKNOWN && pixel_format->alphaMode != D2D1_ALPHA_MODE_UNKNOWN)
-        return S_OK;
 
     for (int i = 0; i < ARRAY_SIZE(formats); ++i)
     {
         if (IsEqualGUID(formats[i].wic_format, wic_format))
         {
+            if (pixel_format->format != DXGI_FORMAT_UNKNOWN
+                    && pixel_format->format != formats[i].pixel_format.format)
+                return E_INVALIDARG;
+            if (pixel_format->alphaMode != D2D1_ALPHA_MODE_UNKNOWN
+                    && pixel_format->alphaMode != formats[i].pixel_format.alphaMode
+                    && !(formats[i].pixel_format.format == DXGI_FORMAT_A8_UNORM
+                        && pixel_format->alphaMode == D2D1_ALPHA_MODE_PREMULTIPLIED))
+                return E_INVALIDARG;
             if (pixel_format->format == DXGI_FORMAT_UNKNOWN)
                 pixel_format->format = formats[i].pixel_format.format;
             if (pixel_format->alphaMode == D2D1_ALPHA_MODE_UNKNOWN)
@@ -188,7 +228,11 @@ HRESULT d2d_wic_render_target_init(struct d2d_wic_render_target *render_target, 
 {
     D2D1_RENDER_TARGET_PROPERTIES rt_desc;
     D3D10_TEXTURE2D_DESC texture_desc;
+    D3D10_SUBRESOURCE_DATA initial = {0};
     WICPixelFormatGUID bitmap_format;
+    IWICBitmapLock *lock;
+    BYTE *pixels;
+    UINT buffer_size;
     ID3D10Texture2D *texture;
     IDXGIDevice *dxgi_device;
     ID2D1Device *device;
@@ -223,9 +267,18 @@ HRESULT d2d_wic_render_target_init(struct d2d_wic_render_target *render_target, 
 
     switch (texture_desc.Format)
     {
+        case DXGI_FORMAT_A8_UNORM:
+            render_target->bpp = 1;
+            break;
         case DXGI_FORMAT_B8G8R8A8_UNORM:
         case DXGI_FORMAT_R8G8B8A8_UNORM:
             render_target->bpp = 4;
+            break;
+        case DXGI_FORMAT_R16G16B16A16_FLOAT:
+            render_target->bpp = 8;
+            break;
+        case DXGI_FORMAT_R32G32B32A32_FLOAT:
+            render_target->bpp = 16;
             break;
 
         default:
@@ -241,7 +294,25 @@ HRESULT d2d_wic_render_target_init(struct d2d_wic_render_target *render_target, 
     texture_desc.MiscFlags = desc->usage & D2D1_RENDER_TARGET_USAGE_GDI_COMPATIBLE ?
             D3D10_RESOURCE_MISC_GDI_COMPATIBLE : 0;
 
-    if (FAILED(hr = ID3D10Device1_CreateTexture2D(d3d_device, &texture_desc, NULL, &texture)))
+    /* A WIC target starts with the bitmap's existing contents. */
+    if (FAILED(hr = IWICBitmap_Lock(bitmap, NULL, WICBitmapLockRead, &lock))) return hr;
+    if (SUCCEEDED(hr = IWICBitmapLock_GetStride(lock, &initial.SysMemPitch)))
+        hr = IWICBitmapLock_GetDataPointer(lock, &buffer_size, &pixels);
+    if (SUCCEEDED(hr))
+    {
+        if (!render_target->height || !render_target->width
+                || (UINT64)render_target->width * render_target->bpp > initial.SysMemPitch
+                || (UINT64)(render_target->height - 1) * initial.SysMemPitch
+                    + (UINT64)render_target->width * render_target->bpp > buffer_size)
+            hr = E_INVALIDARG;
+        else
+        {
+            initial.pSysMem = pixels;
+            hr = ID3D10Device1_CreateTexture2D(d3d_device, &texture_desc, &initial, &texture);
+        }
+    }
+    IWICBitmapLock_Release(lock);
+    if (FAILED(hr))
     {
         WARN("Failed to create texture, hr %#lx.\n", hr);
         return hr;

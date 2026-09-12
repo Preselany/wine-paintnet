@@ -1171,3 +1171,31 @@ paintnet-20260912-092403-530078.log / pdncrash.62.log fails LayersStrip renderin
 a custom effect below Gaussian Blur tries to allocate INT_MIN..INT_MAX bounds.
 Finite requested-region propagation remains under investigation. No working
 editing/save workflow is claimed.
+
+## WIC target formats and synchronization — September 12
+
+Native probe 138 covers 576 format/alpha/type combinations across twelve WIC
+formats, six DXGI choices, four alpha modes, and DEFAULT/SOFTWARE target types.
+It measures creation HRESULTs, resolved formats, existing bitmap contents, Clear,
+and repeated rectangle drawing. Probe 140 changes the WIC bitmap directly
+between drawing batches and checks subsequent empty and drawing batches. The
+Wine implementation matches every measured status and byte, including A8's
+native default straight-alpha mode. Premultiplied alpha is also accepted for A8.
+Unsupported WIC formats fail before explicit DXGI overrides are considered.
+
+The wic_target test combines native format outcomes with all six bitmap phases.
+Native job 143 and Wine each pass 2,534 checks without TODOs or failures. Full
+wic-target-full-focused.log: 44 cases, 250,377 checks, 96 existing TODO failures,
+zero ordinary/flaky failures and no skips. Evidence also includes
+wic-target-first-comparison.log and wic-target-update-first.log.
+
+The local Gaussian region change expands requested inputs by the blur footprint
+instead of dropping finite region limits. Reference 142 includes infinite custom
+shaders, Flood, nested blur, Crop and Composite at 96/144 DPI. All 80 statuses and
+bounds match Windows; 66 pixel cases agree within 1e-6. Fourteen finite-crop blur
+cases retain errors up to 0.042697, so Gaussian conformance remains incomplete.
+
+Application launch paintnet-20260912-093450-534484.log remains open until a brush
+interaction. A8 mask creation succeeds; pdncrash.63.log instead fails in
+AnimatedValue.TryAnimateRawValueCore while committing the stroke. This is still
+an unusable-editor result, not a successful editing workflow.

@@ -2066,12 +2066,16 @@ static void STDMETHODCALLTYPE d2d_device_context_Clear(ID2D1DeviceContext6 *ifac
 static void STDMETHODCALLTYPE d2d_device_context_BeginDraw(ID2D1DeviceContext6 *iface)
 {
     struct d2d_device_context *context = impl_from_ID2D1DeviceContext(iface);
+    HRESULT hr;
 
     TRACE("iface %p.\n", iface);
 
     memset(&context->error, 0, sizeof(context->error));
     context->drawing = TRUE;
     if (FAILED(context->target_error)) d2d_device_context_set_error(context, context->target_error);
+    if (context->ops && context->ops->device_context_begin_draw
+            && FAILED(hr = context->ops->device_context_begin_draw(context->outer_unknown)))
+        d2d_device_context_set_error(context, hr);
     if (context->target.type == D2D_TARGET_COMMAND_LIST)
     {
         d2d_command_list_begin_draw(context->target.command_list, context);

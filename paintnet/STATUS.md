@@ -704,3 +704,20 @@ The private X display stopped during testing; its window-creation failures were
 rechecked after restarting it. The restored-display application run still fails
 in LayersStrip with EXCEEDS_MAX_BITMAP_SIZE while trying to allocate an infinite
 custom-effect output (pdncrash.62.log). The editor remains unusable.
+
+## WIC render targets — September 12
+
+A8, premultiplied half-float and full-float WIC targets now render through the
+real Direct2D path. Format/alpha validation rejects incompatible targets before
+allocation. Existing bitmap contents and external edits between drawing batches
+are preserved. Native and Wine each pass 2,534 focused checks; the full local
+suite passes 44 cases / 250,377 checks with 96 existing TODOs and no ordinary
+failures. The implementation currently copies the full bitmap at BeginDraw and
+EndDraw, so this path still needs performance work.
+
+The local Gaussian region prototype now lets the editor remain open and removes
+the Layers-panel allocation failure. Native probe 142 matches all 80 graph
+statuses/bounds and 66 pixel cases; 14 blur-edge cases still differ. This remains
+uncommitted rendering work. A brush stroke passes A8 target creation but crashes
+when committing the stroke, in overlapping animation scheduling
+(pdncrash.63.log). Drawing and saving are still not verified.
