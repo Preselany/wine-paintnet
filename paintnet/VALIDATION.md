@@ -612,3 +612,28 @@ paintnet-20260912-012518-285482.log; crash: pdncrash.21.log. The later traceback
 also still encounters the missing dcomp presentation-factory export. The editor
 has not opened; no editing, save/reopen, native chooser, or hardware optimization
 milestone is claimed.
+
+## Effect nodes
+
+The effect_node regression passes 222 checks on Windows and Wine, with no
+failures, todos, or skips. Windows batch: 044-node-alpha; Wine log:
+effect-node-tests.log. Reference probes 042-effect-node and 043-effect-node-chain
+measure node identity, retained references, unsupported-QI output preservation,
+dynamic input counts, another context on the same device, unchanged public
+inputs, live property changes, nested wrappers, chained effects, missing inputs,
+cycles, and graph passthrough. All 54 records in the final standalone probe
+match exactly, including seven images and 112 RGBA channels:
+effect-node-first.log. Existing sixteen focused cases remain at 105,695 passing
+checks with one animation todo: effect-node-focused.log. Together the seventeen
+cases have 105,917 checks.
+
+A separate local Color Management prototype is present during the latest app
+run. Its 108 standard-color cases preserve earlier pixels after an alpha-metadata
+fix, but custom ICC color differences remain unresolved. No full Color Management
+support is claimed. App log paintnet-20260912-021705-307058.log and pdncrash.24.log
+verify 312 unchanged binaries and show the next missing effect is UnPremultiply.
+The editor still has not opened.
+
+The broad Direct2D suite preserves its prior result: 17,157 checks, 237 todos,
+one skip, and only the two known unexpected todo successes at d2d1.c:15659.
+Log: d2d1-suite-effect-node.log. No new broad-suite failures were observed.

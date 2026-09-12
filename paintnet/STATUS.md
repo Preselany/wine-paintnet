@@ -8,12 +8,13 @@ managed renderer does not count toward this project's compatibility status.
 
 ## Current state — September 12, 2026
 
-The editor still does not open. The latest verified run passes color-profile
-initialization, then fails because the Color Management effect is not registered.
-The new profile resource tests pass on both Windows and Wine; their generated
-ICC data has independently checked color semantics. The sixteen focused cases
-pass 105,695 Wine checks, with one existing animation todo. Startup, editing,
-save/reopen, native dialogs, and hardware performance remain open.
+The editor still does not open. Effect-node wrapping now renders nested and
+chained effects with native-verified pixels and graph errors. Seventeen focused
+cases pass 105,917 Wine checks, with one existing animation todo. A local Color
+Management prototype advances startup to the missing UnPremultiply effect;
+that prototype still has ICC rendering discrepancies and is not committed
+support. Startup, editing, save/reopen, native dialogs, and hardware performance
+remain open.
 
 ## Verified baseline — September 11, 2026
 
@@ -350,6 +351,24 @@ RGB ICC profile. Generic ICC validation uses Little CMS and is not full WCS conf
 
 Paint.NET passes ColorProfiles initialization, then stops in its Color Management
 wrapper because the underlying Direct2D effect is not registered.
+
+## Effects inside transform graphs
+
+CreateTransformNodeFromEffect now retains the underlying effect and exposes a
+transform node whose input count tracks it. Each creation has a distinct COM
+identity. Evaluation resolves graph connections without changing the wrapped
+effect's public image inputs. Nested wrappers, chains of supported built-in
+effects, property updates, passthrough graphs, missing inputs, and cycles have
+native comparisons. Deleting nodes removes remaining graph references, including
+cycles.
+
+The focused regression passes 222 checks on both Windows and Wine. The standalone
+probe's API results and seven rendered images (112 RGBA channels) match exactly.
+General custom transforms with image inputs, unsupported node types, and graph
+fan-out remain open; this is not complete custom-graph support.
+
+With the separate, uncommitted Color Management prototype, Paint.NET passes this
+API and stops at CLSID_D2D1UnPremultiply during ConvertAlphaEffect initialization.
 
 ## Observed remaining failures
 

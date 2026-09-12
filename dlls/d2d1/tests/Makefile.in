@@ -12,6 +12,7 @@ SOURCES = \
 	draw_transform.c \
 	effect_context.c \
 	effect_identity.c \
+	effect_node.c \
 	emboss.c \
 	opacity.c \
 	histogram.c \

@@ -656,6 +656,7 @@ static void d2d_transform_node_disconnect(struct d2d_transform_node *node)
 static void d2d_transform_graph_delete_node(struct d2d_transform_graph *graph,
         struct d2d_transform_node *node)
 {
+    struct d2d_transform_node *other;
     unsigned int i;
 
     list_remove(&node->entry);
@@ -673,7 +674,12 @@ static void d2d_transform_graph_delete_node(struct d2d_transform_graph *graph,
     if (node->render_info)
         ID2D1DrawInfo_Release(&node->render_info->ID2D1DrawInfo_iface);
 
-    d2d_transform_node_disconnect(node);
+    LIST_FOR_EACH_ENTRY(other, &graph->nodes, struct d2d_transform_node, entry)
+    {
+        if (other->output == node) other->output = NULL;
+        for (i = 0; i < other->input_count; ++i)
+            if (other->inputs[i] == node) other->inputs[i] = NULL;
+    }
 
     free(node->inputs);
     free(node);
@@ -2379,12 +2385,14 @@ static HRESULT STDMETHODCALLTYPE d2d_effect_context_GetMaximumSupportedFeatureLe
     return E_NOTIMPL;
 }
 
+static HRESULT d2d_effect_node_create(ID2D1Effect *effect, ID2D1TransformNode **node);
+
 static HRESULT STDMETHODCALLTYPE d2d_effect_context_CreateTransformNodeFromEffect(ID2D1EffectContext1 *iface,
         ID2D1Effect *effect, ID2D1TransformNode **node)
 {
-    FIXME("iface %p, effect %p, node %p stub!\n", iface, effect, node);
+    TRACE("iface %p, effect %p, node %p.\n", iface, effect, node);
 
-    return E_NOTIMPL;
+    return d2d_effect_node_create(effect, node);
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_effect_context_CreateBlendTransform(ID2D1EffectContext1 *iface,
@@ -3063,24 +3071,82 @@ static const ID2D1ImageVtbl d2d_effect_image_vtbl =
     d2d_effect_image_GetFactory,
 };
 
+struct d2d_effect_node
+{
+    ID2D1TransformNode ID2D1TransformNode_iface;
+    LONG refcount;
+    struct d2d_effect *effect;
+};
+
+static struct d2d_effect_node *impl_from_effect_node(ID2D1TransformNode *iface)
+{
+    return CONTAINING_RECORD(iface, struct d2d_effect_node, ID2D1TransformNode_iface);
+}
+
+static HRESULT STDMETHODCALLTYPE d2d_effect_node_QueryInterface(ID2D1TransformNode *iface, REFIID iid, void **out)
+{
+    if (!IsEqualGUID(iid, &IID_IUnknown) && !IsEqualGUID(iid, &IID_ID2D1TransformNode))
+        return E_NOINTERFACE;
+    ID2D1TransformNode_AddRef(iface);
+    *out = iface;
+    return S_OK;
+}
+
+static ULONG STDMETHODCALLTYPE d2d_effect_node_AddRef(ID2D1TransformNode *iface)
+{
+    return InterlockedIncrement(&impl_from_effect_node(iface)->refcount);
+}
+
+static ULONG STDMETHODCALLTYPE d2d_effect_node_Release(ID2D1TransformNode *iface)
+{
+    struct d2d_effect_node *node = impl_from_effect_node(iface);
+    ULONG refcount = InterlockedDecrement(&node->refcount);
+    if (!refcount)
+    {
+        ID2D1Effect_Release(&node->effect->ID2D1Effect_iface);
+        free(node);
+    }
+    return refcount;
+}
+
+static UINT32 STDMETHODCALLTYPE d2d_effect_node_GetInputCount(ID2D1TransformNode *iface)
+{
+    return impl_from_effect_node(iface)->effect->input_count;
+}
+
+static const ID2D1TransformNodeVtbl d2d_effect_node_vtbl =
+{
+    d2d_effect_node_QueryInterface,
+    d2d_effect_node_AddRef,
+    d2d_effect_node_Release,
+    d2d_effect_node_GetInputCount,
+};
+
+static HRESULT d2d_effect_node_create(ID2D1Effect *effect, ID2D1TransformNode **out)
+{
+    struct d2d_effect_node *node;
+
+    if (!out) return E_INVALIDARG;
+    *out = NULL;
+    if (!effect || effect->lpVtbl != &d2d_effect_vtbl) return E_INVALIDARG;
+    if (!(node = calloc(1, sizeof(*node)))) return E_OUTOFMEMORY;
+    node->ID2D1TransformNode_iface.lpVtbl = &d2d_effect_node_vtbl;
+    node->refcount = 1;
+    node->effect = impl_from_ID2D1Effect(effect);
+    ID2D1Effect_AddRef(effect);
+    *out = &node->ID2D1TransformNode_iface;
+    return S_OK;
+}
+
 static HRESULT d2d_effect_transform_graph_initialize_nodes(struct d2d_transform_graph *graph,
         struct d2d_device *device);
 
-static HRESULT d2d_custom_effect_evaluate(struct d2d_effect *effect, struct d2d_device_context *context,
-        const D2D1_RECT_L *region, struct d2d_effect_image *output, BOOL bounds_only, BOOL linkable_output)
+static HRESULT d2d_effect_prepare(struct d2d_effect *effect, struct d2d_device_context *context)
 {
-    struct d2d_transform_node *node = effect->graph->output;
-    ID2D1DrawTransform *transform;
-    D2D1_RECT_L opaque;
     float dpi_x = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 96 : context->desc.dpiX;
     float dpi_y = context->drawing_state.unitMode == D2D1_UNIT_MODE_PIXELS ? 96 : context->desc.dpiY;
     HRESULT hr;
 
-    if (!node) return S_FALSE;
-    if (FAILED(ID2D1TransformNode_QueryInterface(node->object, &IID_ID2D1DrawTransform, (void **)&transform)))
-        return S_FALSE;
-    ID2D1DrawTransform_Release(transform);
-    if (effect->input_count || node->input_count) return S_FALSE;
     if (effect->render_dpi_x != dpi_x || effect->render_dpi_y != dpi_y)
         effect->changes |= D2D1_CHANGE_TYPE_CONTEXT;
     if (effect->changes)
@@ -3090,8 +3156,24 @@ static HRESULT d2d_custom_effect_evaluate(struct d2d_effect *effect, struct d2d_
         effect->render_dpi_x = dpi_x;
         effect->render_dpi_y = dpi_y;
     }
+    return d2d_effect_transform_graph_initialize_nodes(effect->graph, context->device);
+}
+
+static HRESULT d2d_custom_effect_evaluate(struct d2d_effect *effect, struct d2d_device_context *context,
+        const D2D1_RECT_L *region, struct d2d_effect_image *output, BOOL bounds_only, BOOL linkable_output)
+{
+    struct d2d_transform_node *node = effect->graph->output;
+    ID2D1DrawTransform *transform;
+    D2D1_RECT_L opaque;
+    HRESULT hr;
+
+    if (!node) return S_FALSE;
+    if (FAILED(ID2D1TransformNode_QueryInterface(node->object, &IID_ID2D1DrawTransform, (void **)&transform)))
+        return S_FALSE;
+    ID2D1DrawTransform_Release(transform);
+    if (effect->input_count || node->input_count) return S_FALSE;
     /* PrepareForRender is allowed to replace the transform graph. */
-    if (FAILED(hr = d2d_effect_transform_graph_initialize_nodes(effect->graph, context->device))) return hr;
+    if (FAILED(hr = d2d_effect_prepare(effect, context))) return hr;
     node = effect->graph->output;
     if (!node || node->input_count) return D2DERR_INVALID_GRAPH_CONFIGURATION;
     if (FAILED(hr = ID2D1TransformNode_QueryInterface(node->object, &IID_ID2D1DrawTransform, (void **)&transform)))
@@ -3111,19 +3193,75 @@ static HRESULT d2d_custom_effect_evaluate(struct d2d_effect *effect, struct d2d_
     return d2d_custom_effect_render(context, node->render_info, linkable_output, output);
 }
 
+enum d2d_effect_kind
+{
+    EFFECT_PASSTHROUGH, EFFECT_GRAPH, EFFECT_ALPHA_MASK, EFFECT_CONVOLVE_MATRIX,
+    EFFECT_CONTRAST, EFFECT_EMBOSS, EFFECT_OPACITY,
+};
+
+struct d2d_evaluation_source
+{
+    ID2D1Image *image;
+    struct d2d_transform_node *node;
+    size_t scope;
+};
+
+struct d2d_evaluation_frame
+{
+    struct d2d_effect *effect;
+    struct d2d_effect_image inputs[2];
+    struct d2d_evaluation_source sources[2];
+    struct d2d_transform_node *binding;
+    size_t scope;
+    enum d2d_effect_kind kind;
+    unsigned int count, next;
+};
+
+/* A graph input is an evaluation-local binding, not a SetInput on the wrapped
+ * effect. Follow outer graph bindings iteratively to support nested wrappers. */
+static HRESULT d2d_effect_input_source(struct d2d_effect *effect, struct d2d_transform_node *binding,
+        size_t scope, unsigned int index, const struct d2d_evaluation_frame *frames,
+        struct d2d_evaluation_source *source)
+{
+    const struct d2d_evaluation_frame *outer;
+    const struct d2d_transform_graph *graph;
+    unsigned int i;
+
+    memset(source, 0, sizeof(*source));
+    while (binding)
+    {
+        if (index >= binding->input_count || binding->input_count != effect->input_count)
+            return D2DERR_INVALID_GRAPH_CONFIGURATION;
+        if (binding->inputs[index])
+        {
+            source->node = binding->inputs[index];
+            source->scope = scope;
+            return S_OK;
+        }
+        outer = &frames[scope];
+        graph = outer->effect->graph;
+        for (i = 0; i < graph->input_count; ++i)
+            if (graph->inputs[i].node == binding && graph->inputs[i].index == index) break;
+        if (i == graph->input_count) return D2DERR_INVALID_GRAPH_CONFIGURATION;
+        effect = outer->effect;
+        binding = outer->binding;
+        scope = outer->scope;
+        index = i;
+    }
+    if (index >= effect->input_count || !effect->inputs[index]) return D2DERR_INVALID_GRAPH_CONFIGURATION;
+    source->image = effect->inputs[index];
+    return S_OK;
+}
+
 /* Intermediate rectangles are in effect pixels and may have negative origins.
  * Frames own completed inputs; graph pointers are borrowed for this evaluation. */
 static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Image *image,
         struct d2d_effect_image *output, BOOL bounds_only, const D2D1_RECT_L *region)
 {
-    enum effect_kind { EFFECT_PASSTHROUGH, EFFECT_ALPHA_MASK, EFFECT_CONVOLVE_MATRIX, EFFECT_CONTRAST, EFFECT_EMBOSS, EFFECT_OPACITY } kind;
-    struct evaluation_frame
-    {
-        struct d2d_effect *effect;
-        struct d2d_effect_image inputs[2];
-        enum effect_kind kind;
-        unsigned int count, next;
-    } *frames = NULL, *frame;
+    enum d2d_effect_kind kind;
+    struct d2d_evaluation_frame *frames = NULL, *frame;
+    struct d2d_evaluation_source source = {image}, sources[2];
+    struct d2d_transform_node *binding;
     struct d2d_effect *effect;
     struct d2d_effect_image result = {0};
     BOOL effect_image = image && image->lpVtbl == &d2d_effect_image_vtbl;
@@ -3136,6 +3274,17 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
     if (!image) return E_INVALIDARG;
     for (;;)
     {
+        binding = source.node;
+        if (binding)
+        {
+            if (binding->object->lpVtbl != &d2d_effect_node_vtbl)
+            {
+                hr = E_NOTIMPL;
+                break;
+            }
+            image = &impl_from_effect_node(binding->object)->effect->ID2D1Image_iface;
+        }
+        else image = source.image;
         if (FAILED(ID2D1Image_QueryInterface(image, &IID_ID2D1Bitmap, (void **)&result.bitmap)))
         {
             if (image->lpVtbl != &d2d_effect_image_vtbl)
@@ -3175,11 +3324,28 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
             {
                 const D2D1_RECT_L *requested = region;
                 BOOL linkable = TRUE;
+                if (FAILED(hr = d2d_effect_prepare(effect, context))) break;
+                if (effect->graph->passthrough)
+                {
+                    kind = EFFECT_GRAPH;
+                    if (FAILED(hr = d2d_effect_input_source(effect, binding, source.scope,
+                            effect->graph->passthrough_input, frames, &sources[0]))) break;
+                    goto push_frame;
+                }
+                if (effect->graph->output && effect->graph->output->object->lpVtbl == &d2d_effect_node_vtbl)
+                {
+                    kind = EFFECT_GRAPH;
+                    sources[0].image = NULL;
+                    sources[0].node = effect->graph->output;
+                    sources[0].scope = depth;
+                    goto push_frame;
+                }
                 for (i = 0; i < depth; ++i)
                 {
                     if (frames[i].kind == EFFECT_CONVOLVE_MATRIX || frames[i].kind == EFFECT_EMBOSS)
                         requested = NULL; /* These transforms require expanded input regions. */
-                    if (frames[i].kind != EFFECT_PASSTHROUGH && frames[i].kind != EFFECT_OPACITY)
+                    if (frames[i].kind != EFFECT_PASSTHROUGH && frames[i].kind != EFFECT_GRAPH
+                            && frames[i].kind != EFFECT_OPACITY)
                         linkable = FALSE;
                 }
                 hr = d2d_custom_effect_evaluate(effect, context, requested, &result, bounds_only, linkable);
@@ -3193,12 +3359,9 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
                 break;
             }
             for (j = 0; j < count; ++j)
-                if (!effect->inputs[j]) break;
-            if (j != count)
-            {
-                hr = D2DERR_INVALID_GRAPH_CONFIGURATION;
-                break;
-            }
+                if (FAILED(hr = d2d_effect_input_source(effect, binding, source.scope, j, frames, &sources[j]))) break;
+            if (j != count) break;
+push_frame:
             if (!d2d_array_reserve((void **)&frames, &capacity, depth + 1, sizeof(*frames)))
             {
                 hr = E_OUTOFMEMORY;
@@ -3209,7 +3372,10 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
             frame->effect = effect;
             frame->kind = kind;
             frame->count = count;
-            image = effect->inputs[0];
+            frame->binding = binding;
+            frame->scope = source.scope;
+            memcpy(frame->sources, sources, count * sizeof(*sources));
+            source = sources[0];
             continue;
         }
         {
@@ -3257,7 +3423,7 @@ have_result:
             result.bitmap = NULL;
             if (frame->next < frame->count)
             {
-                image = frame->effect->inputs[frame->next];
+                source = frame->sources[frame->next];
                 break;
             }
             result.rect = frame->inputs[0].rect;
@@ -3825,6 +3991,7 @@ static HRESULT d2d_effect_transform_graph_initialize_nodes(struct d2d_transform_
 
     LIST_FOR_EACH_ENTRY(node, &graph->nodes, struct d2d_transform_node, entry)
     {
+        if (node->object->lpVtbl == &d2d_effect_node_vtbl) continue;
         if (node->render_info) continue;
         if (d2d_transform_node_needs_render_info(node))
         {
