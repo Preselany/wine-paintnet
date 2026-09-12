@@ -8,29 +8,24 @@ managed renderer does not count toward this project's compatibility status.
 
 ## Current state — September 12, 2026
 
-The editor is not yet usable. The local working tree passes color-icon rendering,
-window creation, the busy-spinner animation, zoom-slider gradient setup,
-WhiteLevelAdjustment, custom image shaders, document-thumbnail rendering, and
-a contained geometry subtraction in ColorRectangleControl. Default-stroke widening
-and path-combination support now also pass that control. Startup
-now passes CompositorController activation with the initial lifecycle support.
-Window feedback configuration now also works. The feature-level query now also passes. Transformed ellipse widening now
-also passes brush activation. Offset transforms now translate effect graph inputs
-without an extra render pass. Local DrawBitmap replay and the Invert effect now
-advance brush initialization through a local Gaussian Blur prototype. Glyph
-replay now also passes History-panel drawing. The Layers panel gets through
-half-float WIC metadata lookup and bitmap upload. Local layer rendering now
-advances this panel. Crop bounds and pixels pass focused native comparisons;
-ellipse and rounded-rectangle bounds now pass native checks. Local geometry
-stroke replay and the Flood/Composite effects now reach the editor. Startup is still unreliable. Two memory fixes now preserve recorded command
-payloads during buffer growth and retain the correct font-collection references
-during concurrent initialization. The latest run fails when a Layers-panel custom
-effect attempts to render an infinite region beneath Gaussian Blur. Earlier brush
-clicks failed animation scheduling and A8 WIC render-target creation; the alpha
-format is now registered, while the render-target changes remain a local prototype. The canvas has visible incomplete regions and toolbar
-labels render incorrectly. Gaussian Blur,
-glyph replay, and some layer mask edges still have measured Windows differences.
-The editor remains unusable, and compositor visual presentation is unimplemented.
+The original application reaches the editor in the private Wine test display,
+but the editor is not yet usable. Startup now passes the initial effect metadata,
+COM interfaces, custom image shaders, geometry operations, WIC target creation,
+and overlapping animation scheduling. Two committed memory fixes preserve
+recorded command payloads during buffer growth and keep the correct references
+during concurrent font-collection initialization.
+
+The local Gaussian requested-region change removes the Layers-panel infinite
+allocation failure. It remains a prototype with measured blur-edge differences.
+The committed WIC conversion work now passes both directions of the brush's
+floating-point bitmap conversion. The latest brush test instead fails while
+releasing a DirectWrite text-layout object (pdncrash.68.log); its underlying
+memory error remains under investigation. No brush stroke has been successfully
+verified, and saving/reopening is unverified.
+
+Toolbar labels still render incorrectly. Gaussian Blur, glyph replay, layer
+mask edges, and other local rendering prototypes have measured Windows
+differences. Compositor visual presentation remains unimplemented.
 
 Command-list DrawImage replay and source-copy compositing are local prototypes.
 Their 96-DPI image cases largely match Windows, but higher-DPI and fractional
@@ -739,3 +734,21 @@ Brush interaction now passes the previous animation failure. The next failure
 is conversion of floating-point brush sprites to 32-bit pixels: a WIC format
 converter reaches an unimplemented path during CopyPixels (pdncrash.65/66.log).
 The editor can open, but drawing still crashes and saving remains unverified.
+
+## Floating-point brush bitmap conversion — September 12
+
+WIC now converts straight and premultiplied RGBA float images to BGRA/PBGRA and
+RGBA/PRGBA display pixels, converts the four byte formats back to float, and
+converts between straight and premultiplied float formats. Conversion preserves
+alpha semantics, channel order, cropped rows, and padding. The converter checks
+source rectangles and output buffer bounds before writing.
+
+Windows and Wine each pass 209,611 checks in the new regression, including a
+524,290-pixel gamma ramp and every byte-channel/alpha combination in both
+premultiplied byte layouts. The complete local suite passes 47 cases / 502,950
+checks with 96 existing TODOs and no ordinary failures. The broader upstream WIC
+converter suite retains its existing 12 format-coverage failures and nine skips.
+
+The real brush test now passes the previously missing conversions, but crashes
+in DirectWrite text-layout disposal. This remains an unusable-editor result;
+no working draw/save/reopen workflow is claimed.

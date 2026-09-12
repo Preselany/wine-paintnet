@@ -1224,3 +1224,40 @@ These remain failed brush tests; no successful editing workflow is claimed.
 Limits: custom priority comparison callbacks are still explicitly unsupported.
 The new tests cover default arbitration, not all callback orderings, overlapping
 keyframe intervals, compressed schedules, or every cancellation/lifetime edge.
+
+## Floating-point WIC conversion — September 12
+
+Native references 148 and 150 cover float RGBA/PRGBA to all four byte RGBA/BGRA
+layouts and to both float alpha layouts, and all four byte layouts to float.
+Inputs include zero/fractional alpha, RGB exceeding alpha, negative/HDR float
+channels, NaN, and infinite alpha. Each conversion copies a full image, a cropped
+rectangle and a one-pixel edge, with padded strides and a minimally sized buffer.
+The final float-source reference matches all measured status and output bytes.
+Byte-to-float output agrees within 2e-7; the floating-point transfer function can
+differ by small rounding amounts. Byte outputs and float-source outputs are
+checked exactly in the focused fixtures.
+
+Reference 149 sweeps 262,145 samples over [0,1] and another 262,145 over [0,.02].
+Every observed output transition matches after quantizing the linear input to
+steps of 1/3354 before sRGB conversion. Reference 152 exhaustively checks all
+65,536 input channel/alpha pairs in PBGRA and PRGBA: 16-bit fixed-point reciprocal
+unpremultiplication reproduces the observed byte indices before linearization.
+Reference 151 measures rectangle errors, short strides, undersized buffers and
+unchanged output on failure across sixteen format pairs (160 cases).
+
+The focused float_conversion regression passes **209,611 checks** with no TODOs,
+failures or skips on native Windows (job 153) and Wine. It checks exact byte
+pixels, float values, crop positions, every padding/guard byte, dense gamma
+intervals, exhaustive unpremultiplication row hashes, and error HRESULTs.
+Full wic-float-full-focused.log: **47 cases / 502,950 checks**, 96 existing TODO
+failures, zero ordinary/flaky failures and no skips. The upstream WIC converter
+case passes the same 20,313-check run before/after output bounds validation,
+retaining twelve existing missing-format failures, 133 reported TODOs and nine
+skips; this broader suite is not claimed to pass.
+
+Application evidence: paintnet-20260912-100423-548004.log / pdncrash.67.log first
+exposes the reverse PBGRA-to-float conversion after float-to-PBGRA is available.
+With both implemented, paintnet-20260912-100912-550122.log / pdncrash.68.log passes
+those paths but fails with AccessViolationException while disposing a
+DWriteTextLayout4 in the drawing-resource cache. Drawing remains unsuccessful;
+the next investigation is the text-layout/resource lifetime error.

@@ -127,6 +127,22 @@ static inline float from_sRGB_component(float f)
     return powf((f + 0.055f) / 1.055f, 2.4f);
 }
 
+static BYTE float_to_srgb_byte(float value)
+{
+    if (!(value > 0.0f)) return 0;
+    if (value >= 1.0f) return 255;
+    /* WIC quantizes linear RGB before applying the transfer function. */
+    value = floorf(value * 3354.0f + 0.5f) / 3354.0f;
+    return floorf(to_sRGB_component(value) * 255.0f + 0.5f);
+}
+
+static BYTE float_to_alpha_byte(float value)
+{
+    if (!isfinite(value) || value <= 0.0f) return 0;
+    if (value >= 1.0f) return 255;
+    return floorf(value * 255.0f + 0.5f);
+}
+
 #if 0 /* FIXME: enable once needed */
 
 static void from_sRGB(BYTE *bgr)
@@ -947,6 +963,7 @@ static HRESULT copypixels_to_32bppBGRA(struct FormatConverter *This, const WICRe
         }
         return S_OK;
     case format_128bppRGBAFloat:
+    case format_128bppPRGBAFloat:
         if (prc)
         {
             HRESULT res;
@@ -958,7 +975,9 @@ static HRESULT copypixels_to_32bppBGRA(struct FormatConverter *This, const WICRe
             BYTE *dstrow;
             DWORD *dstpixel;
 
+            if ((UINT)prc->Width > UINT_MAX / 16) return E_OUTOFMEMORY;
             srcstride = 16 * prc->Width;
+            if ((UINT)prc->Height > UINT_MAX / srcstride) return E_OUTOFMEMORY;
             srcdatasize = srcstride * prc->Height;
 
             srcdata = malloc(srcdatasize);
@@ -977,11 +996,25 @@ static HRESULT copypixels_to_32bppBGRA(struct FormatConverter *This, const WICRe
                     for (x = 0; x < prc->Width; x++)
                     {
                         BYTE red, green, blue, alpha;
+                        float r = srcpixel[0], g = srcpixel[1], b = srcpixel[2], a = srcpixel[3];
 
-                        red   = (BYTE)floorf(to_sRGB_component(*srcpixel++) * 255.0f + 0.51f);
-                        green = (BYTE)floorf(to_sRGB_component(*srcpixel++) * 255.0f + 0.51f);
-                        blue  = (BYTE)floorf(to_sRGB_component(*srcpixel++) * 255.0f + 0.51f);
-                        alpha = (BYTE)floorf(*srcpixel++ * 255.0f + 0.51f);
+                        if (source_format == format_128bppPRGBAFloat)
+                        {
+                            if (a != 0.0f)
+                            {
+                                float inverse_alpha = 1.0f / a;
+                                r *= inverse_alpha;
+                                g *= inverse_alpha;
+                                b *= inverse_alpha;
+                            }
+                            else
+                                r = g = b = 0.0f;
+                        }
+                        red = float_to_srgb_byte(r);
+                        green = float_to_srgb_byte(g);
+                        blue = float_to_srgb_byte(b);
+                        alpha = float_to_alpha_byte(a);
+                        srcpixel += 4;
 
                         *dstpixel++ = alpha << 24 | red << 16 | green << 8 | blue;
                     }
@@ -2306,6 +2339,30 @@ static HRESULT copypixels_to_128bppRGBAFloat(struct FormatConverter *This, const
 
     switch (source_format)
     {
+    case format_128bppRGBAFloat:
+    case format_128bppPRGBAFloat:
+        if (!prc) return S_OK;
+        hr = IWICBitmapSource_CopyPixels(This->source, prc, cbStride, cbBufferSize, pbBuffer);
+        if (SUCCEEDED(hr) && source_format == format_128bppPRGBAFloat)
+        {
+            INT x, y;
+            float *pixel;
+
+            for (y = 0; y < prc->Height; ++y)
+                for (x = 0, pixel = (float *)(pbBuffer + y * cbStride); x < prc->Width; ++x, pixel += 4)
+                {
+                    if (pixel[3] != 0.0f)
+                    {
+                        float inverse_alpha = 1.0f / pixel[3];
+                        pixel[0] *= inverse_alpha;
+                        pixel[1] *= inverse_alpha;
+                        pixel[2] *= inverse_alpha;
+                    }
+                    else
+                        pixel[0] = pixel[1] = pixel[2] = pixel[3] = 0.0f;
+                }
+        }
+        return hr;
     case format_24bppBGR:
     {
         UINT srcstride, srcdatasize;
@@ -2352,6 +2409,9 @@ static HRESULT copypixels_to_128bppRGBAFloat(struct FormatConverter *This, const
         return hr;
     }
     case format_32bppBGRA:
+    case format_32bppPBGRA:
+    case format_32bppRGBA:
+    case format_32bppPRGBA:
     {
         UINT srcstride, srcdatasize;
         const BYTE *srcpixel;
@@ -2365,6 +2425,7 @@ static HRESULT copypixels_to_128bppRGBAFloat(struct FormatConverter *This, const
             return S_OK;
 
         srcstride = 4 * prc->Width;
+        if ((UINT)prc->Height > UINT_MAX / srcstride) return E_OUTOFMEMORY;
         srcdatasize = srcstride * prc->Height;
 
         srcdata = malloc(srcdatasize);
@@ -2381,10 +2442,27 @@ static HRESULT copypixels_to_128bppRGBAFloat(struct FormatConverter *This, const
                 dstpixel= (float *)dstrow;
                 for (x = 0; x < prc->Width; x++)
                 {
-                    dstpixel[2] = from_sRGB_component(*srcpixel++ / 255.0f);
-                    dstpixel[1] = from_sRGB_component(*srcpixel++ / 255.0f);
-                    dstpixel[0] = from_sRGB_component(*srcpixel++ / 255.0f);
-                    dstpixel[3] = *srcpixel++ / 255.0f;
+                    BOOL rgba = source_format == format_32bppRGBA || source_format == format_32bppPRGBA;
+                    UINT r = srcpixel[rgba ? 0 : 2], g = srcpixel[1], b = srcpixel[rgba ? 2 : 0];
+                    UINT alpha = srcpixel[3];
+
+                    if (source_format == format_32bppPBGRA || source_format == format_32bppPRGBA)
+                    {
+                        if (alpha)
+                        {
+                            UINT factor = (255 << 16) / alpha;
+                            r = min((r * factor) >> 16, 255);
+                            g = min((g * factor) >> 16, 255);
+                            b = min((b * factor) >> 16, 255);
+                        }
+                        else if (source_format == format_32bppPRGBA)
+                            r = g = b = 0;
+                    }
+                    dstpixel[0] = from_sRGB_component(r / 255.0f);
+                    dstpixel[1] = from_sRGB_component(g / 255.0f);
+                    dstpixel[2] = from_sRGB_component(b / 255.0f);
+                    dstpixel[3] = alpha / 255.0f;
+                    srcpixel += 4;
 
                     dstpixel += 4;
                 }
@@ -2468,6 +2546,32 @@ static HRESULT copypixels_to_128bppPRGBAFloat(struct FormatConverter *This, cons
         if (prc)
             return IWICBitmapSource_CopyPixels(This->source, prc, cbStride, cbBufferSize, pbBuffer);
         return S_OK;
+    case format_128bppRGBAFloat:
+        if (!prc) return S_OK;
+        hr = IWICBitmapSource_CopyPixels(This->source, prc, cbStride, cbBufferSize, pbBuffer);
+        if (SUCCEEDED(hr))
+        {
+            INT x, y;
+            float *pixel;
+
+            for (y = 0; y < prc->Height; ++y)
+                for (x = 0, pixel = (float *)(pbBuffer + y * cbStride); x < prc->Width; ++x, pixel += 4)
+                {
+                    if (pixel[3] != 0.0f)
+                    {
+                        pixel[0] *= pixel[3];
+                        pixel[1] *= pixel[3];
+                        pixel[2] *= pixel[3];
+                    }
+                    else
+                        pixel[0] = pixel[1] = pixel[2] = pixel[3] = 0.0f;
+                }
+        }
+        return hr;
+    case format_32bppBGRA:
+    case format_32bppPBGRA:
+    case format_32bppRGBA:
+    case format_32bppPRGBA:
     case format_64bppPRGBA:
         {
             hr = copypixels_to_128bppRGBAFloat(This, prc, cbStride, cbBufferSize, pbBuffer, source_format);
@@ -2483,7 +2587,7 @@ static HRESULT copypixels_to_128bppPRGBAFloat(struct FormatConverter *This, cons
                     {
                         float alpha = dstrow[4*x+3];
 
-                        if (alpha != 65535)
+                        if (alpha != 1.0f)
                         {
                             dstrow[4*x] = dstrow[4*x] * alpha;
                             dstrow[4*x+1] = dstrow[4*x+1] * alpha;
@@ -2858,22 +2962,35 @@ static HRESULT WINAPI FormatConverter_CopyPixels(IWICFormatConverter *iface,
 {
     FormatConverter *This = impl_from_IWICFormatConverter(iface);
     WICRect rc;
+    UINT width, height, bpp;
+    UINT64 row_size;
     HRESULT hr;
     TRACE("(%p,%s,%u,%u,%p)\n", iface, debug_wic_rect(prc), cbStride, cbBufferSize, pbBuffer);
 
     if (This->source)
     {
+        hr = IWICBitmapSource_GetSize(This->source, &width, &height);
+        if (FAILED(hr)) return hr;
         if (!prc)
         {
-            UINT width, height;
-            hr = IWICBitmapSource_GetSize(This->source, &width, &height);
-            if (FAILED(hr)) return hr;
             rc.X = 0;
             rc.Y = 0;
             rc.Width = width;
             rc.Height = height;
             prc = &rc;
         }
+
+        if (!pbBuffer || prc->Width <= 0 || prc->Height <= 0) return E_INVALIDARG;
+        if (prc->X < 0 || prc->Y < 0) return HRESULT_FROM_WIN32(ERROR_ARITHMETIC_OVERFLOW);
+        if ((UINT)prc->X > width || (UINT)prc->Width > width - prc->X
+                || (UINT)prc->Y > height || (UINT)prc->Height > height - prc->Y)
+            return E_INVALIDARG;
+        hr = get_pixelformat_bpp(This->dst_format->guid, &bpp);
+        if (FAILED(hr)) return hr;
+        row_size = ((UINT64)prc->Width * bpp + 7) / 8;
+        if (cbStride < row_size) return E_INVALIDARG;
+        if ((UINT64)cbStride * (prc->Height - 1) + row_size > cbBufferSize)
+            return WINCODEC_ERR_INSUFFICIENTBUFFER;
 
         return This->dst_format->copy_function(This, prc, cbStride, cbBufferSize,
             pbBuffer, This->src_format->format);
@@ -2953,6 +3070,8 @@ static HRESULT WINAPI FormatConverter_Initialize(IWICFormatConverter *iface,
 
     res = IWICBitmapSource_GetPixelFormat(source, &srcFormat);
     if (FAILED(res)) goto end;
+
+    TRACE("Source format %s.\n", debugstr_guid(&srcFormat));
 
     srcinfo = get_formatinfo(&srcFormat);
     if (!srcinfo)
