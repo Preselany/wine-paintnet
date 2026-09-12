@@ -684,6 +684,13 @@ static HRESULT CDECL png_encoder_create_frame(struct encoder *encoder, const str
 
     png_write_info(This->png_ptr, This->info_ptr);
 
+    for (i = 0; i < encoder_frame->metadata_count; ++i)
+    {
+        const struct encoder_metadata *block = &encoder_frame->metadata[i];
+        if (block->size)
+            png_write_chunk(This->png_ptr, block->data + 4, block->data + 8, block->size - 8);
+    }
+
     if (This->format->bit_depth > 8)
         png_set_swap(This->png_ptr);
 

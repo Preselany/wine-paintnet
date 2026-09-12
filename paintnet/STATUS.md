@@ -30,7 +30,7 @@ transformed, and overlapping rectangle combinations now reach the existing
 boolean geometry implementation. Rounded-rectangle simplification also places
 its corners correctly.
 
-The local PNG metadata serializer and default pixel-format color contexts now
+The PNG metadata serializer and default pixel-format color contexts now
 allow the PNG preview, save, and reload to finish. The test drew a brush stroke,
 saved `brush-first.png`, closed the document, reopened the saved file, and saved
 `brush-roundtrip.png`. Both 800-by-600 images decode to exactly the same 480,000
@@ -44,8 +44,9 @@ half-float, and other unsupported formats return the native error. Windows
 caches a separate mutable context per pixel format, which the implementation
 now follows. CMYK needs the installed `RSWOP.icm` profile, which Wine does not
 currently distribute. Many additional pixel-format registrations also remain
-missing. PNG metadata serialization is still local work awaiting its focused
-regressions and remaining block-writer implementation.
+missing. Raw PNG metadata serialization now has native-validated focused regressions.
+Other metadata block-writer methods and the automatic sRGB/gamma chunks remain
+unimplemented.
 
 Toolbar labels still render incorrectly. Gaussian Blur, glyph replay, layer
 mask edges, and other local rendering prototypes have measured Windows
@@ -839,3 +840,32 @@ Wine reports 427 checks plus eight silenced TODOs, with no ordinary failures:
 50 expected failures cover existing absent pixel-format registrations and two
 cover the absent RSWOP CMYK profile. The profile source is not substituted with
 an unrelated CMYK profile. These gaps remain compatibility work.
+
+## PNG raw metadata serialization — September 12
+
+The PNG frame now retains unknown metadata writers and serializes their real
+payloads before the first pixel write. Unknown metadata writers expose their
+blob size and persist the blob to a stream. PNG chunk types come from bytes
+four through seven and payloads from byte eight onward; libpng generates the
+actual length and CRC. Windows treats a CRC supplied inside that blob as more
+payload, so the implementation does likewise. Empty metadata is omitted, while
+one-to-seven-byte blocks fail with `WINCODEC_ERR_BADMETADATAHEADER`.
+
+The serializer releases prior temporary buffers on retries, preserves writer
+references through the frame lifetime, and checks writer-list allocation size.
+Metadata added after pixel writing starts remains stored but is not retroactively
+inserted into the encoded file, matching the native observations.
+
+The `png_metadata` regression covers eight blob lengths at four addition stages.
+It checks persisted bytes, exact EXIF payloads, valid CRCs for every output
+chunk, chunk placement, and exact BGRA pixels after decoding. Windows passes
+1,387 checks with no TODOs or failures. Wine passes 1,213 checks with 61 expected
+failures: 58 missing automatic sRGB/gamma chunks and three frame-commit error
+codes following invalid metadata. The existing WIC `info`, `metadata`, and
+`pngformat` regressions also report no ordinary failures (8,370 checks including
+the info child process; 67 pre-existing TODOs).
+
+The other block-writer methods, non-unknown metadata serializers, default color
+chunks, and the error-state distinction remain unfinished. The Paint.NET PNG
+roundtrip described above is the application-level evidence for this change;
+it does not establish compatibility for other formats or all editing features.

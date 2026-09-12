@@ -228,6 +228,8 @@ typedef struct _MetadataHandlerVtbl
     HRESULT (*fnLoad)(MetadataHandler *handler, IStream *stream, const GUID *preferred_vendor,
         DWORD persist_options);
     HRESULT (*fnCreate)(MetadataHandler *handler);
+    HRESULT (*fnSave)(MetadataHandler *handler, IStream *stream, DWORD options);
+    HRESULT (*fnGetSizeMax)(MetadataHandler *handler, ULARGE_INTEGER *size);
 } MetadataHandlerVtbl;
 
 typedef struct MetadataHandler
@@ -414,6 +416,12 @@ struct encoder_info
     DWORD encoder_options[7];
 };
 
+struct encoder_metadata
+{
+    BYTE *data;
+    ULONG size;
+};
+
 struct encoder_frame
 {
     GUID pixel_format;
@@ -426,6 +434,8 @@ struct encoder_frame
     /* encoder options */
     BOOL interlace;
     DWORD filter;
+    struct encoder_metadata *metadata;
+    UINT metadata_count;
 };
 
 struct encoder

@@ -17,6 +17,7 @@ SOURCES = \
 	pixel_color_context.c \
 	palette.c \
 	pngformat.c \
+	png_metadata.c \
 	propertybag.c \
 	stream.c \
 	tiffformat.c \

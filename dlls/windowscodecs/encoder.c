@@ -63,6 +63,8 @@ typedef struct CommonEncoderFrame {
     struct encoder_frame encoder_frame;
     BOOL initialized;
     BOOL frame_created;
+    IWICMetadataWriter **metadata_writers;
+    UINT metadata_count;
     UINT lines_written;
     BOOL committed;
 } CommonEncoderFrame;
@@ -120,6 +122,17 @@ static ULONG WINAPI CommonEncoderFrame_AddRef(IWICBitmapFrameEncode *iface)
     return ref;
 }
 
+static void CommonEncoderFrame_free_metadata(CommonEncoderFrame *frame)
+{
+    UINT i;
+
+    for (i = 0; i < frame->encoder_frame.metadata_count; ++i)
+        free(frame->encoder_frame.metadata[i].data);
+    free(frame->encoder_frame.metadata);
+    frame->encoder_frame.metadata = NULL;
+    frame->encoder_frame.metadata_count = 0;
+}
+
 static ULONG WINAPI CommonEncoderFrame_Release(IWICBitmapFrameEncode *iface)
 {
     CommonEncoderFrame *This = impl_from_IWICBitmapFrameEncode(iface);
@@ -129,6 +142,11 @@ static ULONG WINAPI CommonEncoderFrame_Release(IWICBitmapFrameEncode *iface)
 
     if (ref == 0)
     {
+        UINT i;
+        for (i = 0; i < This->metadata_count; ++i)
+            IWICMetadataWriter_Release(This->metadata_writers[i]);
+        CommonEncoderFrame_free_metadata(This);
+        free(This->metadata_writers);
         IWICBitmapEncoder_Release(&This->parent->IWICBitmapEncoder_iface);
         free(This);
     }
@@ -361,6 +379,56 @@ static HRESULT WINAPI CommonEncoderFrame_SetThumbnail(IWICBitmapFrameEncode *ifa
     return WINCODEC_ERR_UNSUPPORTEDOPERATION;
 }
 
+static HRESULT CommonEncoderFrame_serialize_metadata(CommonEncoderFrame *frame)
+{
+    struct encoder_metadata *blocks;
+    IWICPersistStream *persist;
+    ULARGE_INTEGER size;
+    IStream *stream;
+    LARGE_INTEGER zero = {0};
+    UINT i;
+    ULONG read;
+    HRESULT hr = S_OK;
+
+    if (!frame->metadata_count) return S_OK;
+    if (!(blocks = calloc(frame->metadata_count, sizeof(*blocks)))) return E_OUTOFMEMORY;
+    for (i = 0; i < frame->metadata_count; ++i)
+    {
+        hr = IWICMetadataWriter_QueryInterface(frame->metadata_writers[i], &IID_IWICPersistStream, (void **)&persist);
+        if (FAILED(hr)) break;
+        hr = IWICPersistStream_GetSizeMax(persist, &size);
+        if (SUCCEEDED(hr) && !size.QuadPart)
+        {
+            IWICPersistStream_Release(persist);
+            continue;
+        }
+        if (SUCCEEDED(hr) && (size.QuadPart < 8 || size.QuadPart > MAXDWORD)) hr = WINCODEC_ERR_BADMETADATAHEADER;
+        if (SUCCEEDED(hr) && !(blocks[i].data = malloc(size.QuadPart))) hr = E_OUTOFMEMORY;
+        if (SUCCEEDED(hr)) hr = CreateStreamOnHGlobal(NULL, TRUE, &stream);
+        if (SUCCEEDED(hr))
+        {
+            hr = IWICPersistStream_SaveEx(persist, stream, 0, FALSE);
+            if (SUCCEEDED(hr)) hr = IStream_Seek(stream, zero, STREAM_SEEK_SET, NULL);
+            if (SUCCEEDED(hr)) hr = IStream_Read(stream, blocks[i].data, size.LowPart, &read);
+            if (SUCCEEDED(hr) && read < 8) hr = WINCODEC_ERR_BADMETADATAHEADER;
+            if (SUCCEEDED(hr)) blocks[i].size = read;
+            IStream_Release(stream);
+        }
+        IWICPersistStream_Release(persist);
+        if (FAILED(hr)) break;
+    }
+    if (FAILED(hr))
+    {
+        for (i = 0; i < frame->metadata_count; ++i) free(blocks[i].data);
+        free(blocks);
+        return hr;
+    }
+    CommonEncoderFrame_free_metadata(frame);
+    frame->encoder_frame.metadata = blocks;
+    frame->encoder_frame.metadata_count = frame->metadata_count;
+    return S_OK;
+}
+
 static HRESULT WINAPI CommonEncoderFrame_WritePixels(IWICBitmapFrameEncode *iface,
     UINT lineCount, UINT cbStride, UINT cbBufferSize, BYTE *pbPixels)
 {
@@ -391,7 +459,8 @@ static HRESULT WINAPI CommonEncoderFrame_WritePixels(IWICBitmapFrameEncode *ifac
 
     if (!This->frame_created)
     {
-        hr = encoder_create_frame(This->parent->encoder, &This->encoder_frame);
+        hr = CommonEncoderFrame_serialize_metadata(This);
+        if (SUCCEEDED(hr)) hr = encoder_create_frame(This->parent->encoder, &This->encoder_frame);
         if (SUCCEEDED(hr))
             This->frame_created = TRUE;
     }
@@ -716,11 +785,34 @@ static HRESULT WINAPI CommonEncoderFrame_Block_GetWriterByIndex(IWICMetadataBloc
     return E_NOTIMPL;
 }
 
-static HRESULT WINAPI CommonEncoderFrame_Block_AddWriter(IWICMetadataBlockWriter *iface, IWICMetadataWriter *metadata_writer)
+static HRESULT WINAPI CommonEncoderFrame_Block_AddWriter(IWICMetadataBlockWriter *iface, IWICMetadataWriter *writer)
 {
-    FIXME("iface %p, metadata_writer %p.\n", iface, metadata_writer);
+    CommonEncoderFrame *frame = impl_from_IWICMetadataBlockWriter(iface);
+    IWICMetadataWriter **writers;
+    GUID format;
+    HRESULT hr;
 
-    return E_NOTIMPL;
+    if (!writer) return E_INVALIDARG;
+    EnterCriticalSection(&frame->parent->lock);
+    if (!frame->initialized) hr = WINCODEC_ERR_NOTINITIALIZED;
+    else if (!IsEqualGUID(&frame->parent->encoder_info.container_format, &GUID_ContainerFormatPng)) hr = E_NOTIMPL;
+    else if (SUCCEEDED(hr = IWICMetadataWriter_GetMetadataFormat(writer, &format)))
+    {
+        if (!IsEqualGUID(&format, &GUID_MetadataFormatUnknown)) hr = E_NOTIMPL;
+        else if (frame->metadata_count >= ~(SIZE_T)0 / sizeof(*writers)
+                || frame->metadata_count == ~0u) hr = E_OUTOFMEMORY;
+        else if (!(writers = realloc(frame->metadata_writers,
+                (frame->metadata_count + 1) * sizeof(*writers)))) hr = E_OUTOFMEMORY;
+        else
+        {
+            frame->metadata_writers = writers;
+            frame->metadata_writers[frame->metadata_count++] = writer;
+            IWICMetadataWriter_AddRef(writer);
+            hr = S_OK;
+        }
+    }
+    LeaveCriticalSection(&frame->parent->lock);
+    return hr;
 }
 
 static HRESULT WINAPI CommonEncoderFrame_Block_SetWriterByIndex(IWICMetadataBlockWriter *iface, UINT index,

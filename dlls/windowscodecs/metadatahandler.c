@@ -483,18 +483,24 @@ static HRESULT WINAPI MetadataHandler_Load(IWICPersistStream *iface,
     return IWICPersistStream_LoadEx(&This->IWICPersistStream_iface, pStm, NULL, WICPersistOptionDefault);
 }
 
-static HRESULT WINAPI MetadataHandler_Save(IWICPersistStream *iface,
-    IStream *pStm, BOOL fClearDirty)
+static HRESULT WINAPI MetadataHandler_Save(IWICPersistStream *iface, IStream *stream, BOOL clear_dirty)
 {
-    FIXME("(%p,%p,%i): stub\n", iface, pStm, fClearDirty);
-    return E_NOTIMPL;
+    MetadataHandler *handler = impl_from_IWICPersistStream(iface);
+
+    return IWICPersistStream_SaveEx(iface, stream, handler->persist_options, clear_dirty);
 }
 
-static HRESULT WINAPI MetadataHandler_GetSizeMax(IWICPersistStream *iface,
-    ULARGE_INTEGER *pcbSize)
+static HRESULT WINAPI MetadataHandler_GetSizeMax(IWICPersistStream *iface, ULARGE_INTEGER *size)
 {
-    FIXME("(%p,%p): stub\n", iface, pcbSize);
-    return E_NOTIMPL;
+    MetadataHandler *handler = impl_from_IWICPersistStream(iface);
+    HRESULT hr;
+
+    if (!size) return E_INVALIDARG;
+    if (!handler->vtable->fnGetSizeMax) return E_NOTIMPL;
+    EnterCriticalSection(&handler->lock);
+    hr = handler->vtable->fnGetSizeMax(handler, size);
+    LeaveCriticalSection(&handler->lock);
+    return hr;
 }
 
 static HRESULT WINAPI MetadataHandler_LoadEx(IWICPersistStream *iface,
@@ -535,10 +541,18 @@ static HRESULT WINAPI MetadataHandler_LoadEx(IWICPersistStream *iface,
 }
 
 static HRESULT WINAPI MetadataHandler_SaveEx(IWICPersistStream *iface,
-    IStream *pIStream, DWORD dwPersistOptions, BOOL fClearDirty)
+        IStream *stream, DWORD options, BOOL clear_dirty)
 {
-    FIXME("(%p,%p,%lx,%i): stub\n", iface, pIStream, dwPersistOptions, fClearDirty);
-    return E_NOTIMPL;
+    MetadataHandler *handler = impl_from_IWICPersistStream(iface);
+    HRESULT hr;
+
+    TRACE("iface %p, stream %p, options %#lx, clear_dirty %d.\n", iface, stream, options, clear_dirty);
+    if (!stream) return E_INVALIDARG;
+    if (!handler->vtable->fnSave) return E_NOTIMPL;
+    EnterCriticalSection(&handler->lock);
+    hr = handler->vtable->fnSave(handler, stream, options);
+    LeaveCriticalSection(&handler->lock);
+    return hr;
 }
 
 static const IWICPersistStreamVtbl MetadataHandler_PersistStream_Vtbl = {
@@ -950,10 +964,31 @@ HRESULT UnknownMetadataReader_CreateInstance(REFIID iid, void** ppv)
     return MetadataReader_Create(&UnknownMetadataReader_Vtbl, iid, ppv);
 }
 
+static HRESULT SaveUnknownMetadata(MetadataHandler *handler, IStream *stream, DWORD options)
+{
+    const BLOB *blob = &handler->items[0].value.blob;
+    ULONG written = 0;
+    HRESULT hr;
+
+    if (handler->items[0].value.vt != VT_BLOB) return WINCODEC_ERR_PROPERTYUNEXPECTEDTYPE;
+    hr = IStream_Write(stream, blob->pBlobData, blob->cbSize, &written);
+    if (SUCCEEDED(hr) && written != blob->cbSize) hr = STG_E_MEDIUMFULL;
+    return hr;
+}
+
+static HRESULT GetUnknownMetadataSize(MetadataHandler *handler, ULARGE_INTEGER *size)
+{
+    if (handler->items[0].value.vt != VT_BLOB) return WINCODEC_ERR_PROPERTYUNEXPECTEDTYPE;
+    size->QuadPart = handler->items[0].value.blob.cbSize;
+    return S_OK;
+}
+
 static const MetadataHandlerVtbl UnknownMetadataWriter_Vtbl =
 {
     .flags = METADATAHANDLER_IS_WRITER | METADATAHANDLER_FIXED_ITEMS,
     .clsid = &CLSID_WICUnknownMetadataWriter,
+    .fnSave = SaveUnknownMetadata,
+    .fnGetSizeMax = GetUnknownMetadataSize,
     .fnLoad = LoadUnknownMetadata,
     .fnCreate = CreateUnknownHandler,
 };
