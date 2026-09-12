@@ -1072,3 +1072,33 @@ all bounds; ten ellipse-edge cases differ. Native focused job 122 passes 2,094
 checks, while Wine records ten TODO failures and no ordinary failures. The
 DCompositionBoostCompositorClock export returns E_NOTIMPL, an explicit unsupported
 result that the app ignores; it is not a refresh-boost implementation.
+
+## Ellipse and rounded-rectangle bounds — September 12
+
+Native ellipse probe 049 covers seven signed/zero radius pairs and five matrix
+choices. Rounded probe 131 covers 225 cases: five normalized/inverted/degenerate
+rectangles, nine radius pairs, and null/identity/shear/zero/rotation matrices.
+Rounded bounds match Wine within 0.000001 (maximum measured difference 9.6e-7).
+Both shapes use transformed cubic extrema rather than the bounding box's corners.
+The native reference files are `ellipse-bounds-reference.c` and
+`rounded-bounds-reference.c`.
+
+The `curve_bounds` regression checks all these native bounds and repeats them
+through transformed-geometry wrappers. Windows job 132 and Wine each pass 2,914
+checks, without TODOs. `curve-bounds-full-focused.log` passes 38 cases / 222,109
+checks with 96 existing TODO failures and zero ordinary/flaky failures.
+
+The local command-list DrawGeometry prototype uses stroke-outline bounds and
+replays the recorded operation. Native probe 130 has 256 cases; all 128 native
+direct/replay pairs match. Wine matches 126 pairs, with two one-pixel differences
+for a transformed nonuniform ellipse at 144 DPI. A circle-bounds correction removes
+32 earlier bound differences. Sixteen nonuniform-ellipse bound cases still differ
+by up to 0.008834, and four triangle cases by at most 1.9e-6. Many native pixel
+comparisons also retain the underlying Wine stroke/antialiasing differences.
+This prototype is not presented as full command-rendering conformance.
+
+The unchanged app now passes the previous color-wheel failure. Its next failure
+is Composite bounds inside a Layers-panel image graph. Flood is separately
+unhandled in an earlier draw. This is `pdncrash.54.log` and
+`paintnet-20260912-082911-499220.log`; all 312 original runtime binaries were
+verified before launch.

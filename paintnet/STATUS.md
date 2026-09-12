@@ -21,7 +21,8 @@ advance brush initialization through a local Gaussian Blur prototype. Glyph
 replay now also passes History-panel drawing. The Layers panel gets through
 half-float WIC metadata lookup and bitmap upload. Local layer rendering now
 advances this panel. Crop bounds and pixels pass focused native comparisons;
-the latest startup failure is command-list DrawGeometry replay. Gaussian Blur,
+ellipse and rounded-rectangle bounds now pass native checks. Local geometry
+stroke replay advances startup to the missing Composite effect. Gaussian Blur,
 glyph replay, and some layer mask edges still have measured Windows differences.
 The editor remains unusable, and compositor visual presentation is unimplemented.
 
@@ -663,3 +664,19 @@ measured ellipse-edge differences. Explicit layer resources, IGNORE_ALPHA,
 and legacy ClearType layer initialization remain unsupported. The newly exported
 DCompositionBoostCompositorClock explicitly returns E_NOTIMPL; Paint.NET handles
 that failure, but dynamic refresh-rate boosting is not implemented.
+
+## Curved geometry bounds — September 12
+
+Ellipse and rounded-rectangle GetBounds now measure the extrema of transformed
+cubic segments. Negative radii use their magnitude; rounded radii are limited
+by the normalized rectangle's size. Zero dimensions and singular transforms
+are covered. The focused regression passes 2,914 checks on Windows and Wine,
+including queries through transformed-geometry wrappers.
+
+With local geometry-stroke replay, Paint.NET reaches a missing Composite effect
+in the Layers panel (`paintnet-20260912-082911-499220.log`, `pdncrash.54.log`).
+An earlier Flood draw is also unimplemented. Command stroke replay remains a
+prototype: 126 of 128 direct/replay pixel pairs match in Wine, but two transformed
+ellipse cases differ by one pixel and native stroke-edge differences remain.
+The editor is still unusable. The full local suite passes 38 cases / 222,109
+checks with 96 existing TODO failures and no ordinary failures.

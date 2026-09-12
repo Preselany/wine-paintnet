@@ -5073,12 +5073,66 @@ static void STDMETHODCALLTYPE d2d_ellipse_geometry_GetFactory(ID2D1EllipseGeomet
     ID2D1Factory_AddRef(*factory = geometry->factory);
 }
 
+static void d2d_ellipse_to_segments(const D2D1_ELLIPSE *ellipse, D2D1_POINT_2F *start_point,
+        D2D1_BEZIER_SEGMENT *segments);
+
+static void d2d_cubic_axis_bounds(float p0, float p1, float p2, float p3, float *low, float *high)
+{
+    double a = -(double)p0 + 3 * (double)p1 - 3 * (double)p2 + p3;
+    double b = 2 * ((double)p0 - 2 * (double)p1 + p2), c = (double)p1 - p0;
+    double roots[2], discriminant, t, u, value;
+    unsigned int count = 0, i;
+
+    *low = min(*low, min(p0, p3));
+    *high = max(*high, max(p0, p3));
+    if (!a)
+    {
+        if (b) roots[count++] = -c / b;
+    }
+    else if ((discriminant = b * b - 4 * a * c) >= 0)
+    {
+        roots[count++] = (-b - sqrt(discriminant)) / (2 * a);
+        roots[count++] = (-b + sqrt(discriminant)) / (2 * a);
+    }
+    for (i = 0; i < count; ++i)
+    {
+        t = roots[i];
+        if (t <= 0 || t >= 1) continue;
+        u = 1 - t;
+        value = u * u * u * p0 + 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t * p3;
+        *low = min(*low, value);
+        *high = max(*high, value);
+    }
+}
+
 static HRESULT STDMETHODCALLTYPE d2d_ellipse_geometry_GetBounds(ID2D1EllipseGeometry *iface,
         const D2D1_MATRIX_3X2_F *transform, D2D1_RECT_F *bounds)
 {
-    FIXME("iface %p, transform %p, bounds %p stub!\n", iface, transform, bounds);
+    struct d2d_geometry *geometry = impl_from_ID2D1EllipseGeometry(iface);
+    D2D1_ELLIPSE ellipse = geometry->u.ellipse.ellipse;
+    D2D1_BEZIER_SEGMENT segments[4];
+    D2D1_POINT_2F start, p1, p2, p3;
+    unsigned int i;
 
-    return E_NOTIMPL;
+    TRACE("iface %p, transform %p, bounds %p.\n", iface, transform, bounds);
+    ellipse.radiusX = fabsf(ellipse.radiusX);
+    ellipse.radiusY = fabsf(ellipse.radiusY);
+    if (!transform) transform = &identity;
+    /* Native bounds follow the four cubic segments used to represent the
+     * ellipse, including their small deviation from an ideal conic. */
+    d2d_ellipse_to_segments(&ellipse, &start, segments);
+    d2d_point_transform(&start, transform, start.x, start.y);
+    *bounds = (D2D1_RECT_F){FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX};
+    for (i = 0; i < ARRAY_SIZE(segments); ++i)
+    {
+        d2d_point_transform(&p1, transform, segments[i].point1.x, segments[i].point1.y);
+        d2d_point_transform(&p2, transform, segments[i].point2.x, segments[i].point2.y);
+        d2d_point_transform(&p3, transform, segments[i].point3.x, segments[i].point3.y);
+        d2d_cubic_axis_bounds(start.x, p1.x, p2.x, p3.x, &bounds->left, &bounds->right);
+        d2d_cubic_axis_bounds(start.y, p1.y, p2.y, p3.y, &bounds->top, &bounds->bottom);
+        start = p3;
+    }
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_ellipse_geometry_GetWidenedBounds(ID2D1EllipseGeometry *iface,
@@ -6278,9 +6332,42 @@ static void STDMETHODCALLTYPE d2d_rounded_rectangle_geometry_GetFactory(ID2D1Rou
 static HRESULT STDMETHODCALLTYPE d2d_rounded_rectangle_geometry_GetBounds(ID2D1RoundedRectangleGeometry *iface,
         const D2D1_MATRIX_3X2_F *transform, D2D1_RECT_F *bounds)
 {
-    FIXME("iface %p, transform %p, bounds %p stub!\n", iface, transform, bounds);
+    struct d2d_geometry *geometry = impl_from_ID2D1RoundedRectangleGeometry(iface);
+    const D2D1_ROUNDED_RECT *rounded = &geometry->u.rounded_rectangle.rounded_rect;
+    D2D1_RECT_F rect = {min(rounded->rect.left, rounded->rect.right), min(rounded->rect.top, rounded->rect.bottom),
+            max(rounded->rect.left, rounded->rect.right), max(rounded->rect.top, rounded->rect.bottom)};
+    D2D1_ELLIPSE ellipse = {{0}};
+    D2D1_BEZIER_SEGMENT segments[4];
+    D2D1_POINT_2F start, centers[4], p[4];
+    unsigned int i, j;
 
-    return E_NOTIMPL;
+    TRACE("iface %p, transform %p, bounds %p.\n", iface, transform, bounds);
+    if (!transform)
+    {
+        *bounds = rect;
+        return S_OK;
+    }
+    ellipse.radiusX = min(fabsf(rounded->radiusX), (rect.right - rect.left) * .5f);
+    ellipse.radiusY = min(fabsf(rounded->radiusY), (rect.bottom - rect.top) * .5f);
+    centers[0] = (D2D1_POINT_2F){rect.left + ellipse.radiusX, rect.top + ellipse.radiusY};
+    centers[1] = (D2D1_POINT_2F){rect.right - ellipse.radiusX, rect.top + ellipse.radiusY};
+    centers[2] = (D2D1_POINT_2F){rect.right - ellipse.radiusX, rect.bottom - ellipse.radiusY};
+    centers[3] = (D2D1_POINT_2F){rect.left + ellipse.radiusX, rect.bottom - ellipse.radiusY};
+    d2d_ellipse_to_segments(&ellipse, &start, segments);
+    *bounds = (D2D1_RECT_F){FLT_MAX, FLT_MAX, -FLT_MAX, -FLT_MAX};
+    for (i = 0; i < ARRAY_SIZE(segments); ++i)
+    {
+        p[0] = start;
+        p[1] = segments[i].point1;
+        p[2] = segments[i].point2;
+        p[3] = segments[i].point3;
+        start = p[3];
+        for (j = 0; j < ARRAY_SIZE(p); ++j)
+            d2d_point_transform(&p[j], transform, p[j].x + centers[i].x, p[j].y + centers[i].y);
+        d2d_cubic_axis_bounds(p[0].x, p[1].x, p[2].x, p[3].x, &bounds->left, &bounds->right);
+        d2d_cubic_axis_bounds(p[0].y, p[1].y, p[2].y, p[3].y, &bounds->top, &bounds->bottom);
+    }
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_rounded_rectangle_geometry_GetWidenedBounds(ID2D1RoundedRectangleGeometry *iface,
