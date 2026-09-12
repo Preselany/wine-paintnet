@@ -48,9 +48,11 @@ missing. Raw PNG metadata serialization now has native-validated focused regress
 Other metadata block-writer methods and the automatic sRGB/gamma chunks remain
 unimplemented.
 
-Toolbar labels still render incorrectly. Gaussian Blur, glyph replay, layer
-mask edges, and other local rendering prototypes have measured Windows
-differences. Compositor visual presentation remains unimplemented.
+Toolbar labels and the Colors panel button now render without black
+background rectangles after the DC background-copy correction. Gaussian Blur,
+glyph replay, layer mask edges, and other local rendering prototypes still
+have measured Windows differences. Compositor visual presentation remains
+unimplemented.
 
 Command-list DrawImage replay and source-copy compositing are local prototypes.
 Their 96-DPI image cases largely match Windows, but higher-DPI and fractional
@@ -869,3 +871,30 @@ The other block-writer methods, non-unknown metadata serializers, default color
 chunks, and the error-state distinction remain unfinished. The Paint.NET PNG
 roundtrip described above is the application-level evidence for this change;
 it does not establish compatibility for other formats or all editing features.
+
+## DC background preservation across interfaces — September 12
+
+Paint.NET obtains `ID2D1DeviceContext` from a DC render target and calls
+`BeginDraw` through that interface. Wine previously copied the existing GDI
+background only in the legacy `ID2D1DCRenderTarget::BeginDraw` wrapper. The newer
+interface bypassed the copy, so uncleared label backgrounds became black.
+
+The existing background-copy operation now runs through the shared device
+context's begin-draw callback. Both interfaces preserve the same background,
+including updates made between draws. The change does not replace the text
+renderer or modify Paint.NET. In the actual editor, the Tool, Brush size,
+Hardness, Spacing, and Fill labels and Colors-panel More button are now readable
+without the earlier black rectangles.
+
+The native reference covers both interfaces, two alpha modes, and three drawing
+passes with a patterned DIB and offset binding rectangle. Before the fix, all
+272 incorrect RGB pixels occurred on the device-context path. Afterward all
+2,304 full ARGB pixels match Windows exactly. The focused `dc_background` test
+passes 2,335 checks on both systems, with no TODOs or failures. The existing
+`wic_target` callback regression also passes all 2,534 checks.
+
+The full current focused suite reports 51 test summaries, 563,283 checks plus
+118 silenced TODO checks, and no ordinary failures, flaky failures, or skips.
+There are 361 total known TODOs. The mask-isolation probe independently matches
+Windows' alpha samples exactly, with maximum RGB error below 0.000000061;
+opacity-mask sampling was not the source of the black label backgrounds.

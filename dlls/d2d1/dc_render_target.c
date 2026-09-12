@@ -26,6 +26,23 @@ static inline struct d2d_dc_render_target *impl_from_IUnknown(IUnknown *iface)
     return CONTAINING_RECORD(iface, struct d2d_dc_render_target, ID2D1DCRenderTarget_iface);
 }
 
+static HRESULT d2d_dc_render_target_begin_draw(IUnknown *outer_unknown)
+{
+    struct d2d_dc_render_target *render_target = impl_from_IUnknown(outer_unknown);
+    const RECT *dst_rect = &render_target->dst_rect;
+    HDC hdc;
+
+    if (render_target->dxgi_surface
+            && SUCCEEDED(IDXGISurface1_GetDC(render_target->dxgi_surface, TRUE, &hdc)))
+    {
+        BitBlt(hdc, 0, 0, dst_rect->right - dst_rect->left, dst_rect->bottom - dst_rect->top,
+                render_target->hdc, dst_rect->left, dst_rect->top, SRCCOPY);
+        IDXGISurface1_ReleaseDC(render_target->dxgi_surface, NULL);
+    }
+
+    return S_OK;
+}
+
 static HRESULT d2d_dc_render_target_present(IUnknown *outer_unknown)
 {
     struct d2d_dc_render_target *render_target = impl_from_IUnknown(outer_unknown);
@@ -586,20 +603,8 @@ static void STDMETHODCALLTYPE d2d_dc_render_target_Clear(ID2D1DCRenderTarget *if
 static void STDMETHODCALLTYPE d2d_dc_render_target_BeginDraw(ID2D1DCRenderTarget *iface)
 {
     struct d2d_dc_render_target *render_target = impl_from_ID2D1DCRenderTarget(iface);
-    const RECT *dst_rect = &render_target->dst_rect;
-    HDC hdc;
 
     TRACE("iface %p.\n", iface);
-
-    if (render_target->dxgi_surface)
-    {
-        if (SUCCEEDED(IDXGISurface1_GetDC(render_target->dxgi_surface, TRUE, &hdc)))
-        {
-            BitBlt(hdc, 0, 0, dst_rect->right - dst_rect->left, dst_rect->bottom - dst_rect->top,
-                    render_target->hdc, dst_rect->left, dst_rect->top, SRCCOPY);
-            IDXGISurface1_ReleaseDC(render_target->dxgi_surface, NULL);
-        }
-    }
 
     ID2D1RenderTarget_BeginDraw(render_target->dxgi_target);
 }
@@ -832,6 +837,7 @@ static const struct ID2D1DCRenderTargetVtbl d2d_dc_render_target_vtbl =
 static const struct d2d_device_context_ops d2d_dc_render_target_ops =
 {
     d2d_dc_render_target_present,
+    d2d_dc_render_target_begin_draw,
 };
 
 HRESULT d2d_dc_render_target_init(struct d2d_dc_render_target *render_target, ID2D1Factory1 *factory,

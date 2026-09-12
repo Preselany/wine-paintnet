@@ -16,6 +16,7 @@ SOURCES = \
 	convolve_matrix.c \
 	contained_combine.c \
 	d2d1.c \
+	dc_background.c \
 	draw_transform.c \
 	draw_input.c \
 	effect_context.c \
