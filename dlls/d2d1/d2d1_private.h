@@ -938,6 +938,12 @@ HRESULT d2d_contrast_render(struct d2d_effect *effect, struct d2d_device_context
         const struct d2d_effect_image *input, struct d2d_effect_image *output);
 HRESULT d2d_opacity_render(struct d2d_effect *effect, struct d2d_device_context *context,
         const struct d2d_effect_image *input, struct d2d_effect_image *output);
+void d2d_crop_init_builtin(struct d2d_factory *factory);
+HRESULT d2d_crop_bounds(struct d2d_effect *effect, struct d2d_device_context *context,
+        const D2D1_RECT_L *input, D2D1_RECT_L *output);
+HRESULT d2d_crop_render(struct d2d_effect *effect, struct d2d_device_context *context,
+        const struct d2d_effect_image *input, struct d2d_effect_image *output);
+
 void d2d_white_level_init_builtin(struct d2d_factory *factory);
 HRESULT d2d_white_level_render(struct d2d_effect *effect, struct d2d_device_context *context,
         const struct d2d_effect_image *input, struct d2d_effect_image *output);

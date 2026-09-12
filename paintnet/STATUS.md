@@ -19,9 +19,10 @@ also passes brush activation. Offset transforms now translate effect graph input
 without an extra render pass. Local DrawBitmap replay and the Invert effect now
 advance brush initialization through a local Gaussian Blur prototype. Glyph
 replay now also passes History-panel drawing. The Layers panel gets through
-half-float WIC metadata lookup and bitmap upload. It now reaches unsupported
-command-list PushLayer replay. Gaussian Blur and glyph replay still have
-measured Windows differences.
+half-float WIC metadata lookup and bitmap upload. Local layer rendering now
+advances this panel. Crop bounds and pixels pass focused native comparisons;
+the latest startup failure is command-list DrawGeometry replay. Gaussian Blur,
+glyph replay, and some layer mask edges still have measured Windows differences.
 The editor remains unusable, and compositor visual presentation is unimplemented.
 
 Command-list DrawImage replay and source-copy compositing are local prototypes.
@@ -636,3 +637,29 @@ Startup now fails while measuring a brush image containing Gaussian Blur. A
 separate main-thread path also exposes missing command-list glyph replay. Bitmap
 replay remains a local prototype: bounds match the non-perspective reference
 cases, but antialiased edge and filtering differences remain.
+
+## Crop effect — September 12
+
+Crop now renders through cached vertex/pixel shaders, including on feature level
+10. It handles normalized rectangles, soft/hard borders, empty intersections,
+shifted effect inputs, and native signed-fraction behavior at negative edges.
+The Windows-measured default rectangle uses infinities. Invalid border enum
+values are rejected without changing the property. Source alpha values remain
+unchanged except for soft-edge multiplication, including ignore-alpha inputs.
+
+Windows and Wine each pass 25,812 focused checks. The complete local suite passes
+37 cases / 219,195 checks with 96 existing TODO failures and zero ordinary
+failures. Native probes using fractional destination offsets also expose an
+existing DrawImage placement/sampling difference at 144 DPI; that remains open.
+
+All 312 original application binaries remain unchanged. The latest run is
+`paintnet-20260912-081547-491678.log` / `pdncrash.53.log`: command-list geometry
+strokes still fail while drawing the color wheel. Rounded-rectangle bounds also
+fail in another startup path. The editor is still unusable.
+
+Local layer rendering supports group opacity, nesting, geometric/opacity masks,
+background initialization, and COPY blending. Ten focused assertions retain
+measured ellipse-edge differences. Explicit layer resources, IGNORE_ALPHA,
+and legacy ClearType layer initialization remain unsupported. The newly exported
+DCompositionBoostCompositorClock explicitly returns E_NOTIMPL; Paint.NET handles
+that failure, but dynamic refresh-rate boosting is not implemented.

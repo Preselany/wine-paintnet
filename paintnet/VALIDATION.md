@@ -1034,3 +1034,41 @@ now succeeds. `paintnet-20260912-072935-469719.log` (`pdncrash.50.log`) instead
 fails on command 20 (PushLayer) while obtaining command-list bounds. Drawing
 layers and final compositor presentation are still missing; the editor remains
 unusable.
+
+## Crop and the current startup boundary — September 12
+
+The Crop implementation uses pixel shaders and retains the source's pixel origin.
+The native measurements refine the documented [Crop behavior](https://learn.microsoft.com/en-us/windows/win32/direct2d/crop):
+rectangle setters normalize inverted coordinates, the default contains infinities,
+output bounds round before intersection, and negative soft borders use signed
+fractional parts. No managed Paint.NET renderer or Microsoft Direct2D DLL is used.
+
+Native job 127 measures 768 cases combining positive/negative offset transforms,
+two source alpha modes, soft/hard borders, negative fractional edges, three DPIs,
+and both unit modes. All bounds and pixels match Wine within 0.000001; maximum
+sampled difference is 3.58e-7. Native job 128 adds 228 crop/property cases including
+empty, inverted, infinite and NaN rectangles. Every record matches, with maximum
+finite channel difference 1.78e-7. The source probes are `crop-negative-reference.c`
+and `crop-render-reference.c`. Job 125 separately establishes enum rejection and
+preservation of prior property values.
+
+The focused `crop` regression uses the native pixel fixtures and repeats on
+feature levels default and 10. Windows job 129 and Wine each pass 25,812 checks,
+with no TODOs. `crop-full-focused.log` passes 37 cases / 219,195 checks, 96 existing
+TODO failures, zero ordinary failures, and zero flaky failures. Initial probe 124
+uses a fractional destination offset at 144 DPI: 18 cases still have DrawImage
+placement/sampling differences despite matching Crop bounds. Probe 126 retains
+additional fractional-offset evidence; the aligned probes above isolate Crop.
+
+The unchanged app's `pdncrash.53.log` / `paintnet-20260912-081547-491678.log` no
+longer reports the Crop bounds failure. Its remaining main-thread failure is
+command 10 (DrawGeometry) during command-list evaluation. An earlier thread also
+hits rounded-rectangle GetBounds. Editing and compositor presentation are still
+unverified.
+
+The full run includes uncommitted layer, glyph, bitmap replay, Gaussian Blur and
+Color Management prototypes. Layer probe 121 matches 150 of 160 pixel cases and
+all bounds; ten ellipse-edge cases differ. Native focused job 122 passes 2,094
+checks, while Wine records ten TODO failures and no ordinary failures. The
+DCompositionBoostCompositorClock export returns E_NOTIMPL, an explicit unsupported
+result that the app ignores; it is not a refresh-boost implementation.

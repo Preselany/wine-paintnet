@@ -1229,45 +1229,6 @@ static HRESULT __stdcall composite_factory(IUnknown **effect)
     return d2d_effect_create_impl(effect, &properties, sizeof(properties));
 }
 
-static const WCHAR crop_description[] =
-L"<?xml version='1.0'?>                                                   \
-  <Effect>                                                                \
-    <Property name='DisplayName' type='string' value='Crop'/>             \
-    <Property name='Author'      type='string' value='The Wine Project'/> \
-    <Property name='Category'    type='string' value='Stub'/>             \
-    <Property name='Description' type='string' value='Crop'/>             \
-    <Inputs >                                                             \
-      <Input name='Source'/>                                              \
-    </Inputs>                                                             \
-    <Property name='Rect' type='vector4' />                               \
-    <Property name='BorderMode' type='enum' />                            \
-  </Effect>";
-
-struct crop_properties
-{
-    D2D1_VECTOR_4F rect;
-    D2D1_BORDER_MODE border_mode;
-};
-
-EFFECT_PROPERTY_RW(crop, rect, VECTOR4)
-EFFECT_PROPERTY_RW(crop, border_mode, ENUM)
-
-static const D2D1_PROPERTY_BINDING crop_bindings[] =
-{
-    { L"Rect", BINDING_RW(crop, rect) },
-    { L"BorderMode", BINDING_RW(crop, border_mode) },
-};
-
-static HRESULT __stdcall crop_factory(IUnknown **effect)
-{
-    static const struct crop_properties properties =
-    {
-        .rect = { -INFINITY, -INFINITY, INFINITY, INFINITY },
-        .border_mode = D2D1_BORDER_MODE_SOFT,
-    };
-    return d2d_effect_create_impl(effect, &properties, sizeof(properties));
-}
-
 static const WCHAR shadow_description[] =
 L"<?xml version='1.0'?>                                                   \
   <Effect>                                                                \
@@ -1856,7 +1817,6 @@ void d2d_effects_init_builtins(struct d2d_factory *factory)
         { &CLSID_D2D12DAffineTransform, X2(_2d_affine_transform) },
         { &CLSID_D2D13DPerspectiveTransform, X2(_3d_perspective_transform) },
         { &CLSID_D2D1Composite, X2(composite) },
-        { &CLSID_D2D1Crop, X2(crop) },
         { &CLSID_D2D1Shadow, X2(shadow) },
         { &CLSID_D2D1Grayscale, X(grayscale) },
         { &CLSID_D2D1ColorMatrix, X2(color_matrix) },
@@ -1895,6 +1855,7 @@ void d2d_effects_init_builtins(struct d2d_factory *factory)
     d2d_emboss_init_builtin(factory);
     d2d_opacity_init_builtin(factory);
     d2d_alpha_conversion_init_builtin(factory);
+    d2d_crop_init_builtin(factory);
     d2d_white_level_init_builtin(factory);
 }
 
@@ -3250,7 +3211,7 @@ enum d2d_effect_kind
 {
     EFFECT_PASSTHROUGH, EFFECT_GRAPH, EFFECT_ALPHA_MASK, EFFECT_CONVOLVE_MATRIX,
     EFFECT_CONTRAST, EFFECT_EMBOSS, EFFECT_OPACITY,
-    EFFECT_PREMULTIPLY, EFFECT_UNPREMULTIPLY, EFFECT_WHITE_LEVEL, EFFECT_DRAW_TRANSFORM, EFFECT_OFFSET, EFFECT_INVERT,
+    EFFECT_PREMULTIPLY, EFFECT_UNPREMULTIPLY, EFFECT_WHITE_LEVEL, EFFECT_DRAW_TRANSFORM, EFFECT_OFFSET, EFFECT_INVERT, EFFECT_CROP,
 };
 
 struct d2d_evaluation_source
@@ -3439,6 +3400,7 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
             else if (IsEqualGUID(&clsid, &CLSID_D2D1Contrast)) kind = EFFECT_CONTRAST;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1Emboss)) kind = EFFECT_EMBOSS;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1Invert)) kind = EFFECT_INVERT;
+            else if (IsEqualGUID(&clsid, &CLSID_D2D1Crop)) kind = EFFECT_CROP;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1Opacity)) kind = EFFECT_OPACITY;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1WhiteLevelAdjustment)) kind = EFFECT_WHITE_LEVEL;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1Premultiply)) kind = EFFECT_PREMULTIPLY;
@@ -3603,6 +3565,13 @@ have_result:
             else if (frame->kind == EFFECT_WHITE_LEVEL)
             {
                 if (!bounds_only && FAILED(hr = d2d_white_level_render(frame->effect, context, frame->inputs, &result)))
+                    goto done;
+            }
+            else if (frame->kind == EFFECT_CROP)
+            {
+                if (FAILED(hr = d2d_crop_bounds(frame->effect, context, &frame->inputs[0].rect, &result.rect)))
+                    goto done;
+                if (!bounds_only && FAILED(hr = d2d_crop_render(frame->effect, context, frame->inputs, &result)))
                     goto done;
             }
             else if (frame->kind == EFFECT_INVERT)

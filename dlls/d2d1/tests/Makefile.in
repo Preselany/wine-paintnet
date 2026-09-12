@@ -6,6 +6,7 @@ SOURCES = \
 	alpha_mask.c \
 	bitmap_source.c \
 	contrast.c \
+	crop.c \
 	command_list_state.c \
 	color_context.c \
 	convolve_matrix.c \
