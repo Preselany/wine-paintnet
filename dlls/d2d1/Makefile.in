@@ -17,6 +17,8 @@ SOURCES = \
 	command_list.c \
 	color_context.c \
 	contrast.c \
+	composite.c \
+	flood.c \
 	crop.c \
 	convolve_matrix.c \
 	custom_effect.c \

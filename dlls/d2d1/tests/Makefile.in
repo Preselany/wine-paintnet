@@ -6,6 +6,8 @@ SOURCES = \
 	alpha_mask.c \
 	bitmap_source.c \
 	contrast.c \
+	composite.c \
+	flood.c \
 	crop.c \
 	curve_bounds.c \
 	command_list_state.c \

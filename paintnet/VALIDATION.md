@@ -1102,3 +1102,44 @@ is Composite bounds inside a Layers-panel image graph. Flood is separately
 unhandled in an earlier draw. This is `pdncrash.54.log` and
 `paintnet-20260912-082911-499220.log`; all 312 original runtime binaries were
 verified before launch.
+
+## Flood and Composite pixel rendering — September 12
+
+Flood now renders the requested region of its infinite solid-color output with
+cached shader-model-4 shaders. Its raw color, including HDR, negative, NaN and
+infinite components, is preserved. The default color is opaque black.
+Composite now folds its inputs in order with all thirteen documented modes,
+computing each mode's union, intersection, source or destination bounds. Input
+count changes rebuild the authoring graph; the builtin evaluator consumes the
+current inputs. Invalid mode values return E_INVALIDARG without changing state.
+
+Native Windows WARP and Wine/DXVK/llvmpipe match exactly for 240 Flood cases
+(direct and cropped, three DPIs, DIPs/pixels, source-over/source-copy) and 702
+Composite cases (one to three inputs, three origin arrangements, thirteen modes,
+three DPIs, DIPs/pixels). Composite input alpha includes values outside [0,1],
+and RGB includes negative and HDR values. The original Composite logging probe
+accidentally overwrote SetValue's HRESULT during GetValue; the corrected probe
+136 confirms the invalid-mode HRESULT and retained previous value. Render case
+results were unaffected by that probe defect.
+
+The same focused executable passes on Windows and Wine at both the default
+feature level and feature level 10: Flood 7,712 checks and Composite 15,626 checks,
+no TODOs or failures. The complete local focused suite passes 40 test cases,
+245,447 checks, 96 existing TODO failures, zero ordinary or flaky failures.
+Evidence: native jobs 133, 134, 136, 137; flood-first-comparison.log,
+composite-graph-comparison.log, flood-composite-focused.log and
+flood-composite-full-focused.log in the isolated work directory.
+
+Limits: the shared graph evaluator currently accepts at most eight inputs per
+node. Infinite sources still require a requested finite region when rendering;
+parent-specific region expansion and all unbounded nested-graph paths are not
+implemented. Composite currently allocates intermediate surfaces for each fold;
+resource pooling and extreme-coordinate coverage remain future work.
+
+With all 312 original application binaries verified unchanged, startup now
+reaches the editor (paintnet-20260912-084719-508658.log). The editor has visible
+canvas and toolbar defects. A brush click crashes in animation scheduling
+(pdncrash.55.log); a second traced run reaches mask rendering and fails the A8
+WIC render-target format (pdncrash.56.log,
+paintnet-20260912-085022-510330.log). Editing and save/reopen are not yet working
+reliably. These startup results also include the older local rendering prototypes.

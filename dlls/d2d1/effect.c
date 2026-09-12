@@ -1194,41 +1194,6 @@ static HRESULT __stdcall _3d_perspective_transform_factory(IUnknown **effect)
     return d2d_effect_create_impl(effect, &properties, sizeof(properties));
 }
 
-static const WCHAR composite_description[] =
-L"<?xml version='1.0'?>                                                   \
-  <Effect>                                                                \
-    <Property name='DisplayName' type='string' value='Composite'/>        \
-    <Property name='Author'      type='string' value='The Wine Project'/> \
-    <Property name='Category'    type='string' value='Stub'/>             \
-    <Property name='Description' type='string' value='Composite'/>        \
-    <Inputs minimum='1' maximum='0xffffffff' >                            \
-      <Input name='Source1'/>                                             \
-      <Input name='Source2'/>                                             \
-    </Inputs>                                                             \
-    <Property name='Mode' type='enum' />                                  \
-  </Effect>";
-
-struct composite_properties
-{
-    D2D1_COMPOSITE_MODE mode;
-};
-
-EFFECT_PROPERTY_RW(composite, mode, ENUM)
-
-static const D2D1_PROPERTY_BINDING composite_bindings[] =
-{
-    { L"Mode", BINDING_RW(composite, mode) },
-};
-
-static HRESULT __stdcall composite_factory(IUnknown **effect)
-{
-    static const struct composite_properties properties =
-    {
-        .mode = D2D1_COMPOSITE_MODE_SOURCE_OVER,
-    };
-    return d2d_effect_create_impl(effect, &properties, sizeof(properties));
-}
-
 static const WCHAR shadow_description[] =
 L"<?xml version='1.0'?>                                                   \
   <Effect>                                                                \
@@ -1329,39 +1294,6 @@ static HRESULT __stdcall color_matrix_factory(IUnknown **effect)
     {
         .color_matrix = { ._11 = 1.0f, ._22 = 1.0f, ._33 = 1.0f, ._44 = 1.0f },
         .alpha_mode = D2D1_COLORMATRIX_ALPHA_MODE_PREMULTIPLIED,
-    };
-    return d2d_effect_create_impl(effect, &properties, sizeof(properties));
-}
-
-static const WCHAR flood_description[] =
-L"<?xml version='1.0'?>                                                   \
-  <Effect>                                                                \
-    <Property name='DisplayName' type='string' value='Flood'/>            \
-    <Property name='Author'      type='string' value='The Wine Project'/> \
-    <Property name='Category'    type='string' value='Stub'/>             \
-    <Property name='Description' type='string' value='Flood'/>            \
-    <Inputs minimum='0' maximum='0' >                                     \
-    </Inputs>                                                             \
-    <Property name='Color' type='vector4' />                              \
-  </Effect>";
-
-struct flood_properties
-{
-    D2D_VECTOR_4F color;
-};
-
-EFFECT_PROPERTY_RW(flood, color, VECTOR4)
-
-static const D2D1_PROPERTY_BINDING flood_bindings[] =
-{
-    { L"Color", BINDING_RW(flood, color) },
-};
-
-static HRESULT __stdcall flood_factory(IUnknown **effect)
-{
-    static const struct flood_properties properties =
-    {
-        .color = {0.0f, 0.0f, 0.0f, 1.0f},
     };
     return d2d_effect_create_impl(effect, &properties, sizeof(properties));
 }
@@ -1816,11 +1748,9 @@ void d2d_effects_init_builtins(struct d2d_factory *factory)
 #define X2(name) name##_description, name##_factory, name##_bindings, ARRAY_SIZE(name##_bindings)
         { &CLSID_D2D12DAffineTransform, X2(_2d_affine_transform) },
         { &CLSID_D2D13DPerspectiveTransform, X2(_3d_perspective_transform) },
-        { &CLSID_D2D1Composite, X2(composite) },
         { &CLSID_D2D1Shadow, X2(shadow) },
         { &CLSID_D2D1Grayscale, X(grayscale) },
         { &CLSID_D2D1ColorMatrix, X2(color_matrix) },
-        { &CLSID_D2D1Flood, X2(flood) },
         { &CLSID_D2D1GaussianBlur, X2(gaussian_blur) },
         { &CLSID_D2D1PointSpecular, X2(point_specular) },
         { &CLSID_D2D1ArithmeticComposite, X2(arithmetic_composite) },
@@ -1856,6 +1786,8 @@ void d2d_effects_init_builtins(struct d2d_factory *factory)
     d2d_opacity_init_builtin(factory);
     d2d_alpha_conversion_init_builtin(factory);
     d2d_crop_init_builtin(factory);
+    d2d_flood_init_builtin(factory);
+    d2d_composite_init_builtin(factory);
     d2d_white_level_init_builtin(factory);
 }
 
@@ -3211,7 +3143,7 @@ enum d2d_effect_kind
 {
     EFFECT_PASSTHROUGH, EFFECT_GRAPH, EFFECT_ALPHA_MASK, EFFECT_CONVOLVE_MATRIX,
     EFFECT_CONTRAST, EFFECT_EMBOSS, EFFECT_OPACITY,
-    EFFECT_PREMULTIPLY, EFFECT_UNPREMULTIPLY, EFFECT_WHITE_LEVEL, EFFECT_DRAW_TRANSFORM, EFFECT_OFFSET, EFFECT_INVERT, EFFECT_CROP,
+    EFFECT_PREMULTIPLY, EFFECT_UNPREMULTIPLY, EFFECT_WHITE_LEVEL, EFFECT_DRAW_TRANSFORM, EFFECT_OFFSET, EFFECT_INVERT, EFFECT_CROP, EFFECT_COMPOSITE,
 };
 
 struct d2d_evaluation_source
@@ -3393,6 +3325,11 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
                 if (FAILED(hr = d2d_bitmap_source_evaluate(effect, context, &result, bounds_only))) break;
                 goto have_result;
             }
+            if (IsEqualGUID(&clsid, &CLSID_D2D1Flood))
+            {
+                if (FAILED(hr = d2d_flood_evaluate(effect, context, region, bounds_only, &result))) break;
+                goto have_result;
+            }
             count = 1;
             if (effect->impl->lpVtbl == &opacity_metadata_vtbl) kind = EFFECT_PASSTHROUGH;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1AlphaMask)) { kind = EFFECT_ALPHA_MASK; count = 2; }
@@ -3401,6 +3338,7 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
             else if (IsEqualGUID(&clsid, &CLSID_D2D1Emboss)) kind = EFFECT_EMBOSS;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1Invert)) kind = EFFECT_INVERT;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1Crop)) kind = EFFECT_CROP;
+            else if (IsEqualGUID(&clsid, &CLSID_D2D1Composite)) {kind = EFFECT_COMPOSITE; count = effect->input_count;}
             else if (IsEqualGUID(&clsid, &CLSID_D2D1Opacity)) kind = EFFECT_OPACITY;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1WhiteLevelAdjustment)) kind = EFFECT_WHITE_LEVEL;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1Premultiply)) kind = EFFECT_PREMULTIPLY;
@@ -3439,6 +3377,7 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
                 if (hr == S_FALSE && depth) hr = E_NOTIMPL;
                 break;
             }
+            if (!count || count > ARRAY_SIZE(sources)) {hr = E_NOTIMPL; break;}
             if (effect->input_count != count)
             {
                 hr = D2DERR_WRONG_STATE;
@@ -3566,6 +3505,13 @@ have_result:
             {
                 if (!bounds_only && FAILED(hr = d2d_white_level_render(frame->effect, context, frame->inputs, &result)))
                     goto done;
+            }
+            else if (frame->kind == EFFECT_COMPOSITE)
+            {
+                if (FAILED(hr = d2d_composite_bounds(frame->effect, frame->inputs, frame->count, &result.rect)))
+                    goto done;
+                if (!bounds_only && FAILED(hr = d2d_composite_render(frame->effect, context,
+                        frame->inputs, frame->count, &result))) goto done;
             }
             else if (frame->kind == EFFECT_CROP)
             {

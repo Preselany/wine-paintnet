@@ -22,7 +22,10 @@ replay now also passes History-panel drawing. The Layers panel gets through
 half-float WIC metadata lookup and bitmap upload. Local layer rendering now
 advances this panel. Crop bounds and pixels pass focused native comparisons;
 ellipse and rounded-rectangle bounds now pass native checks. Local geometry
-stroke replay advances startup to the missing Composite effect. Gaussian Blur,
+stroke replay and the Flood/Composite effects now reach the editor. A brush click
+still crashes: one run failed animation scheduling, and the next failed creation
+of an A8 WIC render target. The canvas has visible incomplete regions and toolbar
+labels render incorrectly. Gaussian Blur,
 glyph replay, and some layer mask edges still have measured Windows differences.
 The editor remains unusable, and compositor visual presentation is unimplemented.
 
