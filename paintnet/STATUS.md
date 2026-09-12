@@ -940,3 +940,44 @@ The subsequent real text-tool test exposes another missing operation: moving
 the text cursor onto the canvas calls a geometry `Widen` path that returns
 `E_NOTIMPL` (`pdncrash.71.log`). Text editing remains unverified; the glyph-cache
 fix does not claim to resolve this separate outline-geometry failure.
+
+## Explicit rectangle stroke styles and text editing — September 12
+
+The text cursor asks Wine to widen a 13 × 13 rectangle using an explicit solid
+miter style, width 1 and miter limit 10. Rectangle widening previously rejected
+every non-null stroke style. It now produces the outline for solid miter and
+miter-or-bevel styles whose corners do not require clipping. Closed solid
+rectangles have no endpoints, so their start, end, and dash caps do not affect
+that outline. Other joins, dashed strokes, and clipped miters remain unsupported.
+
+Native testing also established that fixed-width and hairline styles apply their
+stroke after transforming the rectangle. Hairline width is 1 regardless of the
+supplied positive width. The implementation now respects those semantics instead
+of treating every explicit style as a normal transforming stroke. Widening a
+transformed rectangle also retains the outer boundary when a thick stroke makes
+its inner parallelogram disappear. Other collapsing path topologies remain
+unsupported, as do degenerate fixed-stroke transforms.
+
+The `rectangle_stroke` test covers 172 cases: all 64 cap combinations, plus
+normal/fixed/hairline modes, miter and miter-or-bevel joins, two miter limits,
+three widths and three transforms including reflection and shear. It compares
+bounds, area, and all 2,304 pixels with and without antialiasing against equivalent
+geometry operations. Windows passes 5,338 checks with no failures, TODOs, or skips.
+The initial test incorrectly assumed fixed and hairline strokes behaved like
+normal strokes; native job 173 rejected that assumption, and corrected job 174
+validates the distinct transform rules.
+
+With the cursor-outline fix, the unchanged editor places “Paint.NET on Wine”,
+finishes the text edit, saves a PNG, closes it, reopens it and saves another copy.
+All 480,000 RGBA pixels match, and the two 2,974-byte files have the same SHA-256:
+`ff5bd6662c0823183dc97635149b2e80b08e621d289b76a7ad0bf9bae6490aa7`.
+The text adds 449 changed pixels to the prior brush image. The local report is
+`work/classic/validation/text-roundtrip-report.json`. Other fonts, text styles,
+effects, native Linux file dialogs, and hardware performance still need work.
+
+Wine also passes all 5,338 rectangle-style checks without TODOs, failures or skips.
+The suite with the stroke-transform changes reports 53 summaries, 592,386 checks
+plus 118 silenced TODOs, 361 total known TODOs, and no ordinary/flaky failures or
+skips. After restricting collapsed-inner-boundary handling to parallelograms,
+the rectangle, widening and primitive-combination regressions pass again with
+no ordinary failures.

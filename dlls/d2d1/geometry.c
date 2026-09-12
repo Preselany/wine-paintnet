@@ -4609,6 +4609,7 @@ struct d2d_widened_figure
 {
     D2D1_POINT_2F *points;
     size_t count;
+    unsigned int skip_sides;
 };
 
 static double d2d_widen_cross(D2D1_POINT_2F a, D2D1_POINT_2F b, D2D1_POINT_2F c)
@@ -4658,6 +4659,8 @@ static HRESULT d2d_path_widen_closed(ID2D1Geometry *source, float width, ID2D1St
     {
         const struct d2d_figure *f = &geometry->u.path.figures[i];
         D2D1_POINT_2F *vertices, *left, *right;
+        BOOL parallelogram;
+        double orientation;
         if (!(f->flags & D2D_FIGURE_FLAG_CLOSED)) {hr = E_NOTIMPL; goto done;}
         if (!(figures[i].points = malloc(f->vertex_count * 3 * sizeof(*vertices))))
         { hr = E_OUTOFMEMORY; goto done; }
@@ -4673,6 +4676,10 @@ static HRESULT d2d_path_widen_closed(ID2D1Geometry *source, float width, ID2D1St
         if (count > 1 && vertices[count - 1].x == vertices[0].x && vertices[count - 1].y == vertices[0].y) --count;
         if (count < 3 || d2d_widen_contour_crosses(vertices, count)) {hr = E_NOTIMPL; goto done;}
         figures[i].count = count;
+        orientation = d2d_widen_cross(vertices[0], vertices[1], vertices[2]);
+        parallelogram = count == 4 && orientation
+                && vertices[0].x + vertices[2].x == vertices[1].x + vertices[3].x
+                && vertices[0].y + vertices[2].y == vertices[1].y + vertices[3].y;
         left = vertices + count; right = left + count;
         for (j = 0; j < count; ++j)
         {
@@ -4696,7 +4703,18 @@ static HRESULT d2d_path_widen_closed(ID2D1Geometry *source, float width, ID2D1St
                 size_t next = (j + 1) % count;
                 double dot = ((double)offset[next].x - offset[j].x) * (vertices[next].x - vertices[j].x)
                         + ((double)offset[next].y - offset[j].y) * (vertices[next].y - vertices[j].y);
-                if (dot <= 0) {hr = E_NOTIMPL; goto done;}
+                if (dot <= 0)
+                {
+                    /* A parallelogram's inset vanishes when the stroke reaches
+                     * the opposite edge. The outer contour still contributes. */
+                    if (parallelogram && side == (orientation < 0))
+                    {
+                        figures[i].skip_sides |= 1u << side;
+                        break;
+                    }
+                    hr = E_NOTIMPL;
+                    goto done;
+                }
             }
         }
     }
@@ -4708,6 +4726,7 @@ static HRESULT d2d_path_widen_closed(ID2D1Geometry *source, float width, ID2D1St
         for (side = 0; side < 2; ++side)
         {
             const D2D1_POINT_2F *points = figures[i].points + count * (side + 1);
+            if (figures[i].skip_sides & (1u << side)) continue;
             for (j = 0; j < count; ++j)
             {
                 D2D1_POINT_2F p = points[side ? count - 1 - j : j];
@@ -6109,11 +6128,53 @@ static HRESULT STDMETHODCALLTYPE d2d_rectangle_geometry_Widen(ID2D1RectangleGeom
     D2D1_POINT_2F points[4];
     float half = stroke_width * .5f;
     unsigned int side, i;
+    D2D1_STROKE_TRANSFORM_TYPE stroke_transform = D2D1_STROKE_TRANSFORM_TYPE_NORMAL;
+    ID2D1StrokeStyle1 *style1;
 
     TRACE("iface %p, stroke_width %.8e, stroke_style %p, transform %p, tolerance %.8e, sink %p.\n",
             iface, stroke_width, stroke_style, transform, tolerance, sink);
     if (!sink || !isfinite(stroke_width) || stroke_width < 0) return E_INVALIDARG;
-    if (stroke_style || r->left > r->right || r->top > r->bottom) return E_NOTIMPL;
+    if (r->left > r->right || r->top > r->bottom) return E_NOTIMPL;
+    if (stroke_style)
+    {
+        D2D1_LINE_JOIN join = ID2D1StrokeStyle_GetLineJoin(stroke_style);
+
+        if (SUCCEEDED(ID2D1StrokeStyle_QueryInterface(stroke_style, &IID_ID2D1StrokeStyle1, (void **)&style1)))
+        {
+            stroke_transform = ID2D1StrokeStyle1_GetStrokeTransformType(style1);
+            ID2D1StrokeStyle1_Release(style1);
+        }
+
+        /* A solid closed rectangle has no caps. Its corner miter ratio is
+         * sqrt(2), independent of the subsequent world transform. */
+        if (ID2D1StrokeStyle_GetDashStyle(stroke_style) != D2D1_DASH_STYLE_SOLID
+                || (join != D2D1_LINE_JOIN_MITER && join != D2D1_LINE_JOIN_MITER_OR_BEVEL)
+                || ID2D1StrokeStyle_GetMiterLimit(stroke_style) < sqrtf(2.0f))
+            return E_NOTIMPL;
+    }
+    if (stroke_transform == D2D1_STROKE_TRANSFORM_TYPE_HAIRLINE)
+    {
+        stroke_width = 1.0f;
+        half = .5f;
+    }
+    if (stroke_transform != D2D1_STROKE_TRANSFORM_TYPE_NORMAL && transform)
+    {
+        ID2D1TransformedGeometry *transformed;
+        double length_u = hypot(transform->m11, transform->m12);
+        double length_v = hypot(transform->m21, transform->m22);
+        double cosine, miter_limit = ID2D1StrokeStyle_GetMiterLimit(stroke_style);
+        HRESULT hr;
+
+        if (!length_u || !length_v) return E_NOTIMPL;
+        cosine = fabs(((double)transform->m11 * transform->m21
+                + (double)transform->m12 * transform->m22) / (length_u * length_v));
+        if (cosine >= 1 || 2 / (1 - cosine) > miter_limit * miter_limit) return E_NOTIMPL;
+        if (FAILED(hr = ID2D1Factory_CreateTransformedGeometry(geometry->factory,
+                &geometry->ID2D1Geometry_iface, transform, &transformed))) return hr;
+        hr = d2d_path_widen_closed((ID2D1Geometry *)transformed, stroke_width, NULL, NULL, tolerance, sink);
+        ID2D1TransformedGeometry_Release(transformed);
+        return hr;
+    }
     ID2D1SimplifiedGeometrySink_SetFillMode(sink, D2D1_FILL_MODE_ALTERNATE);
     ID2D1SimplifiedGeometrySink_SetSegmentFlags(sink, D2D1_PATH_SEGMENT_NONE);
     for (side = 0; side < 2; ++side)

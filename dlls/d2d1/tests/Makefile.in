@@ -10,8 +10,8 @@ SOURCES = \
 	flood.c \
 	crop.c \
 	curve_bounds.c \
-	command_data.c \
 	command_list_state.c \
+	command_data.c \
 	color_context.c \
 	convolve_matrix.c \
 	contained_combine.c \
@@ -37,4 +37,5 @@ SOURCES = \
 	widen.c \
 	path_combine.c \
 	primitive_combine.c \
+	rectangle_stroke.c \
 	opacity_metadata.c
