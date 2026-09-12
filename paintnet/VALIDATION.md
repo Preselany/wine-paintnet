@@ -930,3 +930,25 @@ Its next E_NOTIMPL is graph initialization for ID2D1OffsetTransform
 (`paintnet-20260912-062129-434011.log`, `pdncrash.43.log`). The earlier ellipse
 run (`paintnet-20260912-061740-431682.log`, `pdncrash.42.log`) exposed the same
 canvas drawing failure. The canvas and an editing session are still unverified.
+
+## Offset transform execution — September 12
+
+Native job 100 measures 72 finite-bitmap cases and three extreme-coordinate
+bounds queries. All bounds and sampled RGBA values match Wine at feature level
+11.0. Job 101 measures 144 custom-source cases, including infinite bounds; all
+match Wine. At feature level 10.0 the 48 bitmap and 96 custom-source cases using
+plain/chained offsets also match the corresponding Windows records. Opacity
+combinations are exercised only at 11.0 because Wine's separate Opacity renderer
+currently requires that level. These tests do not establish lower-level Opacity
+support. Job 099 timed out with partial output and is superseded by job 100.
+
+Updated focused job 103 passes 1,153 checks on Windows and Wine, including source
+pixel preservation. The full focused suite runs 32 cases / 180,216 checks with
+86 TODO failures and zero ordinary failures
+(`offset-transform-full-focused-2.log`). The earlier focused revision attempted
+unsupported feature-10 Opacity setup and is superseded by this run.
+
+All 312 original application binaries remain unchanged. The application now
+passes offset evaluation and fails at command 12 (DrawBitmap) during command-list
+replay (`paintnet-20260912-063228-439553.log`, `pdncrash.44.log`). Editing, final
+compositor presentation, and native file dialogs remain unverified.

@@ -16,6 +16,7 @@ SOURCES = \
 	effect_context.c \
 	feature_level.c \
 	ellipse_widen.c \
+	offset_transform.c \
 	effect_identity.c \
 	effect_node.c \
 	graph_fanout.c \

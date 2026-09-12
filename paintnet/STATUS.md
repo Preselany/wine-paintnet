@@ -15,8 +15,9 @@ a contained geometry subtraction in ColorRectangleControl. Default-stroke wideni
 and path-combination support now also pass that control. Startup
 now passes CompositorController activation with the initial lifecycle support.
 Window feedback configuration now also works. The feature-level query now also passes. Transformed ellipse widening now
-also passes brush activation. Canvas rendering currently fails when initializing
-an offset transform in an effect graph.
+also passes brush activation. Offset transforms now translate effect graph inputs
+without an extra render pass. Canvas rendering currently fails at command-list
+DrawBitmap replay.
 The editor remains unusable, and compositor visual presentation is unimplemented.
 
 Command-list DrawImage replay and source-copy compositing are local prototypes.
@@ -607,3 +608,14 @@ The sampled circle cases match Windows. Nonuniform ellipses still have measured
 flattening and edge-coverage differences, recorded by 51 focused TODO assertions.
 Dashed and degenerate ellipses, nested transforms with custom styles, arbitrary
 open paths, and full geometry-stroke conformance remain incomplete.
+
+## Offset transforms — September 12
+
+Offset nodes now translate effect coordinates while retaining their input bitmap.
+Requested output regions are mapped back into input space before custom shaders
+run, including infinite sources and nested offsets. Native comparisons cover
+96/144/192 DPI, both unit modes, changing offsets, chained offsets, and Opacity
+composition. The focused test passes all 1,153 checks on Wine and Windows.
+
+The application now passes the offset graph and reaches command-list DrawBitmap,
+which is the next unsupported replay command. The editor is still unusable.

@@ -3250,7 +3250,7 @@ enum d2d_effect_kind
 {
     EFFECT_PASSTHROUGH, EFFECT_GRAPH, EFFECT_ALPHA_MASK, EFFECT_CONVOLVE_MATRIX,
     EFFECT_CONTRAST, EFFECT_EMBOSS, EFFECT_OPACITY,
-    EFFECT_PREMULTIPLY, EFFECT_UNPREMULTIPLY, EFFECT_WHITE_LEVEL, EFFECT_DRAW_TRANSFORM,
+    EFFECT_PREMULTIPLY, EFFECT_UNPREMULTIPLY, EFFECT_WHITE_LEVEL, EFFECT_DRAW_TRANSFORM, EFFECT_OFFSET,
 };
 
 struct d2d_evaluation_source
@@ -3269,6 +3269,8 @@ struct d2d_evaluation_frame
     struct d2d_transform_node *draw_node;
     size_t scope;
     enum d2d_effect_kind kind;
+    D2D1_POINT_2L offset;
+    D2D1_RECT_L region;
     unsigned int count, next;
 };
 
@@ -3309,6 +3311,22 @@ static HRESULT d2d_effect_input_source(struct d2d_effect *effect, struct d2d_tra
 
 /* Intermediate rectangles are in effect pixels and may have negative origins.
  * Frames own completed inputs; graph pointers are borrowed for this evaluation. */
+static LONG d2d_offset_coordinate(LONG coordinate, LONG offset, BOOL inverse)
+{
+    LONGLONG value = coordinate;
+    if (coordinate == INT_MIN || coordinate == INT_MAX) return coordinate;
+    value += inverse ? -(LONGLONG)offset : (LONGLONG)offset;
+    return max(INT_MIN, min(INT_MAX, value));
+}
+
+static void d2d_offset_rect(D2D1_RECT_L *rect, D2D1_POINT_2L offset, BOOL inverse)
+{
+    rect->left = d2d_offset_coordinate(rect->left, offset.x, inverse);
+    rect->right = d2d_offset_coordinate(rect->right, offset.x, inverse);
+    rect->top = d2d_offset_coordinate(rect->top, offset.y, inverse);
+    rect->bottom = d2d_offset_coordinate(rect->bottom, offset.y, inverse);
+}
+
 static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Image *image,
         struct d2d_effect_image *output, BOOL bounds_only, const D2D1_RECT_L *region)
 {
@@ -3319,6 +3337,9 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
     struct d2d_transform_node *binding;
     struct d2d_effect *effect;
     struct d2d_effect_image result = {0};
+    ID2D1OffsetTransform *offset_transform;
+    D2D1_POINT_2L offset = {0};
+    D2D1_RECT_L active_region;
     BOOL effect_image = image && image->lpVtbl == &d2d_effect_image_vtbl;
     size_t capacity = 0, depth = 0, i;
     unsigned int count, j;
@@ -3327,6 +3348,7 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
 
     memset(output, 0, sizeof(*output));
     if (!image) return E_INVALIDARG;
+    if (region) {active_region = *region; region = &active_region;}
     for (;;)
     {
         draw_node = NULL;
@@ -3343,6 +3365,14 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
                 effect = owner->effect;
                 count = binding->input_count;
                 kind = EFFECT_DRAW_TRANSFORM;
+                if (SUCCEEDED(ID2D1TransformNode_QueryInterface(binding->object, &IID_ID2D1OffsetTransform,
+                        (void **)&offset_transform)))
+                {
+                    offset = ID2D1OffsetTransform_GetOffset(offset_transform);
+                    ID2D1OffsetTransform_Release(offset_transform);
+                    if (count != 1) {hr = D2DERR_INVALID_GRAPH_CONFIGURATION; break;}
+                    kind = EFFECT_OFFSET;
+                }
                 if (count > ARRAY_SIZE(sources)) {hr = E_NOTIMPL; break;}
                 for (i = 0; i < depth; ++i)
                     if (frames[i].draw_node == draw_node && frames[i].scope == source.scope) break;
@@ -3438,7 +3468,7 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
                     if (frames[i].kind == EFFECT_CONVOLVE_MATRIX || frames[i].kind == EFFECT_EMBOSS)
                         requested = NULL; /* These transforms require expanded input regions. */
                     if (frames[i].kind != EFFECT_PASSTHROUGH && frames[i].kind != EFFECT_GRAPH
-                            && frames[i].kind != EFFECT_OPACITY)
+                            && frames[i].kind != EFFECT_OPACITY && frames[i].kind != EFFECT_OFFSET)
                         linkable = FALSE;
                 }
                 hr = d2d_custom_effect_evaluate(effect, context, requested, &result, bounds_only, linkable);
@@ -3468,6 +3498,12 @@ push_frame:
             frame->binding = binding;
             frame->draw_node = draw_node;
             frame->scope = source.scope;
+            if (region) frame->region = active_region;
+            if (kind == EFFECT_OFFSET)
+            {
+                frame->offset = offset;
+                if (region) d2d_offset_rect(&active_region, offset, TRUE);
+            }
             memcpy(frame->sources, sources, count * sizeof(*sources));
             source = sources[0];
             continue;
@@ -3513,6 +3549,7 @@ have_result:
                 return S_OK;
             }
             frame = &frames[depth - 1];
+            if (region) active_region = frame->region;
             frame->inputs[frame->next++] = result;
             result.bitmap = NULL;
             if (frame->next < frame->count)
@@ -3521,12 +3558,18 @@ have_result:
                 break;
             }
             result.rect = frame->inputs[0].rect;
-            if (frame->kind == EFFECT_DRAW_TRANSFORM)
+            if (frame->kind == EFFECT_OFFSET)
+            {
+                d2d_offset_rect(&result.rect, frame->offset, FALSE);
+                result.bitmap = frame->inputs[0].bitmap;
+                frame->inputs[0].bitmap = NULL;
+            }
+            else if (frame->kind == EFFECT_DRAW_TRANSFORM)
             {
                 BOOL linkable = TRUE;
                 for (i = 0; i + 1 < depth; ++i)
                     if (frames[i].kind != EFFECT_GRAPH && frames[i].kind != EFFECT_PASSTHROUGH
-                            && frames[i].kind != EFFECT_OPACITY) linkable = FALSE;
+                            && frames[i].kind != EFFECT_OPACITY && frames[i].kind != EFFECT_OFFSET) linkable = FALSE;
                 if (FAILED(hr = d2d_custom_node_evaluate(context, frame->draw_node, frame->inputs,
                         frame->count, region, bounds_only, linkable, &result))) goto done;
             }
@@ -4109,6 +4152,7 @@ static HRESULT d2d_effect_transform_graph_initialize_nodes(struct d2d_transform_
         struct d2d_device *device)
 {
     ID2D1DrawTransform *draw_transform;
+    ID2D1OffsetTransform *offset_transform;
     struct d2d_transform_node *node;
     HRESULT hr;
 
@@ -4116,6 +4160,13 @@ static HRESULT d2d_effect_transform_graph_initialize_nodes(struct d2d_transform_
     {
         if (node->object->lpVtbl == &d2d_effect_node_vtbl) continue;
         if (node->render_info) continue;
+        /* Offset nodes change coordinates and reuse their input image. */
+        if (SUCCEEDED(ID2D1TransformNode_QueryInterface(node->object, &IID_ID2D1OffsetTransform,
+                (void **)&offset_transform)))
+        {
+            ID2D1OffsetTransform_Release(offset_transform);
+            continue;
+        }
         if (d2d_transform_node_needs_render_info(node))
         {
             if (FAILED(hr = d2d_effect_render_info_create(device, &node->render_info)))
