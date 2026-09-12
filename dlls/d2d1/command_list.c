@@ -584,11 +584,67 @@ struct d2d_command_list *unsafe_impl_from_ID2D1CommandList(ID2D1CommandList *ifa
 static void * d2d_command_list_require_space(struct d2d_command_list *command_list, size_t size)
 {
     struct d2d_command *command;
+    UINT_PTR old_base = (UINT_PTR)command_list->data, delta;
+    size_t offset;
 
     if (!d2d_array_reserve(&command_list->data, &command_list->capacity, command_list->size + size, 1))
     {
         d2d_command_list_set_error(command_list, E_OUTOFMEMORY);
         return NULL;
+    }
+
+    /* Variable command fields point into the recording buffer. Keep them tied
+     * to their payload when growing that buffer moves its allocation. */
+    if (old_base && (delta = (UINT_PTR)command_list->data - old_base))
+    {
+#define RELOCATE(field) do { if (field) field = (void *)((UINT_PTR)field + delta); } while (0)
+        for (offset = 0; offset < command_list->size; offset += command->size)
+        {
+            command = (struct d2d_command *)((BYTE *)command_list->data + offset);
+            switch (command->op)
+            {
+                case D2D_COMMAND_DRAW_GLYPH_RUN:
+                {
+                    struct d2d_command_draw_glyph_run *c = (void *)command;
+                    RELOCATE(c->run.glyphIndices);
+                    RELOCATE(c->run.glyphAdvances);
+                    RELOCATE(c->run.glyphOffsets);
+                    RELOCATE(c->run_desc);
+                    if (c->run_desc)
+                    {
+                        RELOCATE(c->run_desc->localeName);
+                        RELOCATE(c->run_desc->string);
+                        RELOCATE(c->run_desc->clusterMap);
+                    }
+                    break;
+                }
+                case D2D_COMMAND_DRAW_BITMAP:
+                {
+                    struct d2d_command_draw_bitmap *c = (void *)command;
+                    RELOCATE(c->dst_rect);
+                    RELOCATE(c->src_rect);
+                    RELOCATE(c->perspective_transform);
+                    break;
+                }
+                case D2D_COMMAND_DRAW_IMAGE:
+                {
+                    struct d2d_command_draw_image *c = (void *)command;
+                    RELOCATE(c->target_offset);
+                    RELOCATE(c->image_rect);
+                    break;
+                }
+                case D2D_COMMAND_FILL_OPACITY_MASK:
+                {
+                    struct d2d_command_fill_opacity_mask *c = (void *)command;
+                    RELOCATE(c->dst_rect);
+                    RELOCATE(c->src_rect);
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
+#undef RELOCATE
     }
 
     command = (struct d2d_command *)((char *)command_list->data + command_list->size);

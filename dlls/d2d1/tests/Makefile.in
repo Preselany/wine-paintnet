@@ -10,6 +10,7 @@ SOURCES = \
 	flood.c \
 	crop.c \
 	curve_bounds.c \
+	command_data.c \
 	command_list_state.c \
 	color_context.c \
 	convolve_matrix.c \
