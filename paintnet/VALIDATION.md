@@ -664,3 +664,37 @@ known custom-ICC differences. No editor or application round trip is claimed.
 The broad Direct2D suite remains at 17,157 checks, 237 todos, one skip, and the
 two known unexpected todo successes at d2d1.c:15659; no new failures. Log:
 d2d1-suite-alpha-conversion.log.
+
+## Dispatcher queue execution and shutdown
+
+The original coremessaging suite passes 226 checks against native Windows
+(051-dispatcher-queue--coremessaging_test.log). The implementation initially
+exposed a test race: the ShutdownCompleted handler may signal an event while
+the returned async action is still Started. The test now waits for that action
+before checking completion and closing it. This revised suite passes all 226
+checks on Windows and Wine, without todos or skips:
+053-dispatcher-deferral--queue-tests.log and queue-priority-tests.log.
+
+The standalone queue probe compares activation, per-thread identity, duplicate
+creation, valid/invalid priorities, callback order, retained references, shutdown
+status, and queue removal. All 42 normal records match exactly:
+052-dispatcher-normal--queue-normal.log and queue-native-comparison.log.
+The expanded deferral probe exposed ShutdownStarting's high-priority ordering;
+after correction all 52 records match, including deferred shutdown and work
+submitted from another thread: 053-dispatcher-deferral--queue-deferral.log and
+queue-deferral-priority.log. The comparison rejects incomplete logs and requires
+completed callbacks and a completed async action. These probes do not cover
+queue timers or ASTA-specific apartment behavior.
+
+The actual application run paintnet-20260912-030821-332210.log verifies all 312
+original binaries, creates the main thread's queue, calls GetForCurrentThread,
+and enqueues a low-priority callback. It reaches MainForm.OnShown and initial
+blank-document creation. Crash pdncrash.27.log reports E_NOTIMPL from
+UIAnimationStoryboard.AddKeyFrameAfterTransition in the busy-spinner animation.
+This run includes uncommitted command-list and Color Management prototypes.
+No successful editing, file round trip, or hardware performance is claimed.
+
+The complete nineteen-case focused suite passes 107,341 checks, zero failures,
+and one existing animation todo (queue-focused.log). The module installation
+script refreshes the new WinRT class in the isolated prefix; shell syntax and
+reference-log comparisons pass.

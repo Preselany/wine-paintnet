@@ -236,6 +236,21 @@ static DWORD msg_wait_for_events_( const char *file, int line, DWORD count, HAND
     return ret;
 }
 
+/* ShutdownCompleted runs before the async action completes. A waiter on an
+ * event signaled by the handler can wake while that handler is still running. */
+static void wait_for_async_completion( IAsyncInfo *info )
+{
+    DWORD end = GetTickCount() + 5000;
+    AsyncStatus status;
+    HRESULT hr;
+    do
+    {
+        hr = IAsyncInfo_get_Status( info, &status );
+        if (FAILED(hr) || status != Started) break;
+        Sleep( 1 );
+    } while (GetTickCount() < end);
+}
+
 #define check_create_dispatcher_queue_controller( size, thread_type, apartment_type, expected_hr ) \
         check_create_dispatcher_queue_controller_( __LINE__, size, thread_type, apartment_type, expected_hr )
 static void check_create_dispatcher_queue_controller_( unsigned int line, DWORD size, DISPATCHERQUEUE_THREAD_TYPE thread_type,
@@ -267,7 +282,6 @@ static void check_create_dispatcher_queue_controller_( unsigned int line, DWORD 
     if (hr == E_INVALIDARG) return;
 
     hr = IDispatcherQueueController_get_DispatcherQueue( dispatcher_queue_controller, &dispatcher_queue );
-    todo_wine
     ok_(__FILE__, line)( hr == S_OK, "got IDispatcherQueueController_get_DispatcherQueue hr %#lx.\n", hr );
     if (FAILED(hr)) goto done;
 
@@ -309,7 +323,7 @@ static void check_create_dispatcher_queue_controller_( unsigned int line, DWORD 
     /* shutdown waits for queued handlers */
     if (winetest_platform_is_wine) Sleep( 200 );
     ret = WaitForSingleObject( event_handler->event, 100 );
-    todo_wine ok_(__FILE__, line)( ret == WAIT_TIMEOUT, "Unexpected wait result %lu.\n", ret );
+    ok_(__FILE__, line)( ret == WAIT_TIMEOUT, "Unexpected wait result %lu.\n", ret );
     SetEvent( queue_handler->event );
 
     /* queue uses the message loop when dispatched on current thread */
@@ -326,6 +340,7 @@ static void check_create_dispatcher_queue_controller_( unsigned int line, DWORD 
         ok_(__FILE__, line)( !ret, "Unexpected wait result %lu.\n", ret );
     }
 
+    wait_for_async_completion( async_info );
     hr = IAsyncInfo_get_Status( async_info, &status );
     ok_(__FILE__, line)( hr == S_OK, "got IAsyncInfo_get_Status hr %#lx.\n", hr );
     ok_(__FILE__, line)( status == Completed, "got IAsyncInfo_get_Status status %d.\n", status );
@@ -438,18 +453,14 @@ static void test_DispatcherQueueController_Statics(void)
     ok( hr == S_OK, "got hr %#lx.\n", hr );
 
     hr = IDispatcherQueueControllerStatics_CreateOnDedicatedThread( dispatcher_queue_controller_statics, NULL );
-    todo_wine
     ok( hr == E_POINTER || hr == 0x80000005 /* win10 22h2 */, "got hr %#lx.\n", hr );
     hr = IDispatcherQueueControllerStatics_CreateOnDedicatedThread( dispatcher_queue_controller_statics, &dispatcher_queue_controller );
-    todo_wine
     ok( hr == S_OK, "got hr %#lx.\n", hr );
     if (FAILED(hr)) goto done;
 
     hr = IDispatcherQueueController_get_DispatcherQueue( dispatcher_queue_controller, NULL );
-    todo_wine
     ok( hr == E_POINTER || hr == 0x80000005 /* win10 22h2 */, "got hr %#lx.\n", hr );
     hr = IDispatcherQueueController_get_DispatcherQueue( dispatcher_queue_controller, &dispatcher_queue );
-    todo_wine
     ok( hr == S_OK, "got hr %#lx.\n", hr );
 
     check_interface( dispatcher_queue, &IID_IUnknown );
@@ -500,12 +511,13 @@ static void test_DispatcherQueueController_Statics(void)
     /* shutdown waits for queued handlers */
     if (winetest_platform_is_wine) Sleep( 200 );
     ret = WaitForSingleObject( event_handler->event, 100 );
-    todo_wine ok( ret == WAIT_TIMEOUT, "Unexpected wait result %lu.\n", ret );
+    ok( ret == WAIT_TIMEOUT, "Unexpected wait result %lu.\n", ret );
 
     SetEvent( queue_handler->event );
     ret = WaitForSingleObject( event_handler->event, 5000 );
     ok( !ret, "Unexpected wait result %lu.\n", ret );
 
+    wait_for_async_completion( async_info );
     hr = IAsyncInfo_get_Status( async_info, &status );
     ok( hr == S_OK, "got hr %#lx.\n", hr );
     ok( status == Completed, "got status %d.\n", status );

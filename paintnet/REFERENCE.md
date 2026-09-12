@@ -299,3 +299,24 @@ API documentation: [CreateColorContext](https://learn.microsoft.com/en-us/window
 and [DXGI color contexts](https://learn.microsoft.com/en-us/windows/win32/api/d2d1_3/nf-d2d1_3-id2d1devicecontext5-createcolorcontextfromdxgicolorspace).
 Native measurements establish the discrepancies from the documented memory-API
 classification and unsupported-QI behavior.
+
+## Dispatcher queues
+
+Build dispatcher-queue-reference.exe with build-reference.sh, then run the same
+executable against system CoreMessaging on Windows and the fork on Wine. Run
+once normally and once with QUEUE_DEFERRAL=1. Compare corresponding logs with:
+
+```sh
+python3 paintnet/compare-dispatcher-queue.py windows.log wine.log
+```
+
+Normal mode checks priorities, queue identity, and shutdown. Deferral mode also
+checks ShutdownStarting ordering, enqueuing while shutdown is deferred, and
+completing that deferral from another thread. QUEUE_REPEAT_SHUTDOWN=1 is a
+separate diagnostic: on the tested Windows build its second call fails and
+leaves the first action pending. The normal comparator deliberately rejects
+that incomplete-shutdown diagnostic.
+
+API documentation: [GetForCurrentThread](https://learn.microsoft.com/en-us/uwp/api/windows.system.dispatcherqueue.getforcurrentthread),
+[ShutdownQueueAsync](https://learn.microsoft.com/en-us/uwp/api/windows.system.dispatcherqueuecontroller.shutdownqueueasync),
+and [CreateDispatcherQueueController](https://learn.microsoft.com/en-us/windows/win32/api/dispatcherqueue/nf-dispatcherqueue-createdispatcherqueuecontroller).

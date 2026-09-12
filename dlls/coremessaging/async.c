@@ -175,18 +175,13 @@ static HRESULT WINAPI async_impl_get_Result( IAsyncInfoImpl *iface, PROPVARIANT 
     return hr;
 }
 
-static BOOL async_info_complete( struct async_info *impl, BOOL called_async )
+static void async_info_finish( struct async_info *impl, HRESULT hr, const PROPVARIANT *result )
 {
     IInspectable *operation = impl->IInspectable_outer;
-    PROPVARIANT result = {0};
-    HRESULT hr;
-
-    hr = impl->callback( impl->invoker, impl->param, &result, called_async );
-    if (!called_async && hr == STATUS_PENDING) return FALSE;
 
     EnterCriticalSection( &impl->cs );
     if (impl->status != Closed) impl->status = FAILED(hr) ? Error : Completed;
-    PropVariantCopy( &impl->result, &result );
+    PropVariantCopy( &impl->result, result );
     impl->hr = hr;
 
     if (impl->handler != NULL && impl->handler != HANDLER_NOT_SET)
@@ -203,6 +198,15 @@ static BOOL async_info_complete( struct async_info *impl, BOOL called_async )
 
     /* release refcount acquired in Start */
     IInspectable_Release( operation );
+}
+
+static BOOL async_info_complete( struct async_info *impl, BOOL called_async )
+{
+    PROPVARIANT result = {0};
+    HRESULT hr = impl->callback( impl->invoker, impl->param, &result, called_async );
+
+    if (!called_async && hr == STATUS_PENDING) return FALSE;
+    async_info_finish( impl, hr, &result );
 
     PropVariantClear( &result );
     return TRUE;
@@ -650,7 +654,7 @@ HRESULT async_action_create( IUnknown *invoker, async_operation_callback callbac
     impl->ref = 1;
 
     if (FAILED(hr = async_info_create( invoker, NULL, callback, (IInspectable *)&impl->IAsyncAction_iface, &impl->IAsyncInfoImpl_inner )) ||
-        FAILED(hr = IAsyncInfoImpl_Start( impl->IAsyncInfoImpl_inner )))
+        (callback && FAILED(hr = IAsyncInfoImpl_Start( impl->IAsyncInfoImpl_inner ))))
     {
         if (impl->IAsyncInfoImpl_inner) IAsyncInfoImpl_Release( impl->IAsyncInfoImpl_inner );
         free( impl );
@@ -660,4 +664,14 @@ HRESULT async_action_create( IUnknown *invoker, async_operation_callback callbac
     *out = &impl->IAsyncAction_iface;
     TRACE( "created IAsyncAction %p\n", *out );
     return S_OK;
+}
+
+void async_action_complete( IAsyncAction *action, HRESULT hr )
+{
+    struct async_action *impl = impl_from_IAsyncAction( action );
+    PROPVARIANT result = {0};
+
+    /* Completion handlers may release the caller's reference. */
+    IAsyncAction_AddRef( action );
+    async_info_finish( impl_from_IAsyncInfoImpl( impl->IAsyncInfoImpl_inner ), hr, &result );
 }

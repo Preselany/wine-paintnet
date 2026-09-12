@@ -8,13 +8,14 @@ managed renderer does not count toward this project's compatibility status.
 
 ## Current state — September 12, 2026
 
-The editor still does not open. Effect-node wrapping and alpha conversion now
-have native-verified rendering. Eighteen focused cases pass 107,115 Wine checks,
-with one existing animation todo. With a local Color Management prototype,
-startup reaches drawing the color-picker icon and fails when a recorded command
-list is used as an effect input. That prototype still has ICC rendering
-discrepancies and is not committed support. Startup, editing, save/reopen,
-native dialogs, and hardware performance remain open.
+The editor is not yet usable. The local working tree now passes the color-icon
+render and window creation, reaching creation of the first blank document.
+Startup then fails on UIAnimation.AddKeyframeAfterTransition while setting up
+the busy spinner. This run includes uncommitted command-list rasterization and
+Color Management prototypes; the latter still has ICC discrepancies, and
+primitive antialiasing/stroke rendering also needs correction. CoreMessaging
+queues now have native-verified callbacks, priorities, identity, and shutdown.
+Editing, save/reopen, native dialogs, and hardware performance remain open.
 
 ## Verified baseline — September 11, 2026
 
@@ -387,6 +388,28 @@ With the uncommitted Color Management prototype, Paint.NET passes alpha-effect
 creation and reaches a recorded command list inside the color-icon effect graph.
 Command-list rasterization is the next rendering blocker; the editor is unopened.
 
+## Dispatcher queues
+
+Windows.System.DispatcherQueue now activates and returns the queue associated
+with the calling thread. Controllers create actual current-thread or dedicated
+message loops. Callbacks execute serially at their selected priorities; the
+first dedicated-thread callback retains its documented ordering. Thread-access
+queries, shutdown events, and deferrals retain their objects and drain pending
+work before completing the asynchronous shutdown action. ShutdownStarting is
+queued at high priority, matching the independently measured Windows order.
+
+The focused coremessaging tests pass 226 checks on both Windows and Wine. The
+standalone comparisons match 42 normal-shutdown records and 52 deferral records
+exactly, including a callback enqueued from a second thread during shutdown.
+Timer creation remains E_NOTIMPL, and ASTA-specific apartment behavior is not
+implemented separately from STA. A repeated shutdown request returns the native
+E_UNEXPECTED; Windows additionally leaves its first action pending in the tested
+repeated-call case, a quirk this implementation does not reproduce.
+
+With the uncommitted rendering prototypes, the unchanged application now passes
+display-aware window creation and fails at the spinner animation keyframe API.
+This is progress through startup, not a successful editor session.
+
 ## Observed remaining failures
 
 * The Color Management effect (`CLSID_D2D1ColorManagement`) is not implemented.
@@ -394,8 +417,8 @@ Command-list rasterization is the next rendering blocker; the editor is unopened
 * Retest Paint.NET's device feature probe after its effect-category initializer
   can finish. The EffectContext1 regression passes independently.
 * Missing `dcomp.dll!CreatePresentationFactory`, observed during diagnostics.
-* `Windows.System.DispatcherQueue` activation fails with `REGDB_E_CLASSNOTREG`
-  when Paint.NET creates display-aware windows, including error-reporting UI.
+* UIAnimation keyframes and repeating storyboards fail during initial blank-document
+  creation. DispatcherQueue activation and its callback path now work.
 * The broader Direct2D drawing/effect pipeline, animation, and composition
   requirements still need investigation and rendering tests.
 

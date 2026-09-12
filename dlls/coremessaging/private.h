@@ -41,6 +41,8 @@
 #include "async_private.h"
 
 HRESULT async_action_create( IUnknown *invoker, async_operation_callback callback, IAsyncAction **out );
+void async_action_complete( IAsyncAction *action, HRESULT hr );
+HRESULT dispatcher_queue_get_for_current_thread( IDispatcherQueue **result );
 
 #define DEFINE_IINSPECTABLE_( pfx, iface_type, impl_type, impl_from, iface_mem, expr )             \
     static inline impl_type *impl_from( iface_type *iface )                                        \

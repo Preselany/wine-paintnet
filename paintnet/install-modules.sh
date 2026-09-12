@@ -17,4 +17,11 @@ for module in "$@"; do
     fi
     cp "$built" "$wine_root/lib/wine/x86_64-windows/$module.dll"
     cp "$built" "$WINEPREFIX/drive_c/windows/system32/$module.dll"
+    if [[ "$module" == coremessaging ]]; then
+        # A full Wine prefix setup imports classes.idl's registry resource.
+        # A module-only update also needs the newly introduced runtime class.
+        WINEDEBUG=-all "$wine_root/bin/wine" reg add \
+            'HKLM\Software\Microsoft\WindowsRuntime\ActivatableClassId\Windows.System.DispatcherQueue' \
+            /v DllPath /t REG_SZ /d 'C:\windows\system32\coremessaging.dll' /f
+    fi
 done
