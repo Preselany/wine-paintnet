@@ -7,7 +7,9 @@ python3 "$here/verify-app.py" "$work_root"
 export WINEPREFIX="$work_root/prefix"
 export WINEDEBUG="${WINEDEBUG:--all,+timestamp,+d2d,+loaddll}"
 export WINEDLLOVERRIDES='dcomp=b;coremessaging=b;d2d1=b;uianimation=b;wined3d=b;d3dcompiler_47=b;d3d11=n;d3d10core=n;dxgi=n;mshtml='
-unset WINE_DWM_DISABLE_COMPOSITION WINE_NATIVE_FILE_DIALOG
+unset WINE_DWM_DISABLE_COMPOSITION
+# An empty value explicitly selects Wine's existing Windows-style dialogs.
+export WINE_NATIVE_FILE_DIALOG="${WINE_NATIVE_FILE_DIALOG-$here/native-file-dialog.py}"
 files=()
 for file in "$@"; do
     file="$(realpath -e -- "$file")"

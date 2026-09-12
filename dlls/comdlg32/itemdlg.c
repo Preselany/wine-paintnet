@@ -34,6 +34,7 @@
 
 #include "wine/debug.h"
 #include "wine/list.h"
+#include "native_dialog.h"
 
 #define IDC_NAV_TOOLBAR      200
 #define IDC_NAVBACK          201
@@ -119,6 +120,8 @@ typedef struct FileDialogImpl {
     IShellItem *psi_setfolder;
     IShellItem *psi_folder;
 
+    struct native_dialog_params *native_params;
+    HRESULT native_close_result;
     HWND dlg_hwnd;
     IExplorerBrowser *peb;
     DWORD ebevents_cookie;
@@ -166,7 +169,7 @@ static HRESULT events_OnFileOk(FileDialogImpl *This)
     {
         TRACE("Notifying %p\n", cursor);
         hr = IFileDialogEvents_OnFileOk(cursor->pfde, (IFileDialog*)&This->IFileDialog2_iface);
-        if(FAILED(hr) && hr != E_NOTIMPL)
+        if(hr != S_OK && hr != E_NOTIMPL)
             break;
     }
 
@@ -263,7 +266,7 @@ static void events_OnTypeChange(FileDialogImpl *This)
         DeactivateActCtx(0, ctx_cookie);
 }
 
-static HRESULT events_OnOverwrite(FileDialogImpl *This, IShellItem *shellitem)
+static HRESULT events_OnOverwrite(FileDialogImpl *This, IShellItem *shellitem, BOOL confirmed)
 {
     ULONG_PTR ctx_cookie = 0;
     events_client *cursor;
@@ -291,7 +294,7 @@ static HRESULT events_OnOverwrite(FileDialogImpl *This, IShellItem *shellitem)
 
     if(SUCCEEDED(hr))
     {
-        if (response == FDEOR_DEFAULT)
+        if (response == FDEOR_DEFAULT && !confirmed)
         {
             WCHAR buf[100];
             int answer;
@@ -773,7 +776,7 @@ static HRESULT on_default_action(FileDialogImpl *This)
                     if (SUCCEEDED(hr))
                     {
                         if (shell_item_exists(shellitem))
-                            hr = events_OnOverwrite(This, shellitem);
+                            hr = events_OnOverwrite(This, shellitem, FALSE);
 
                         IShellItem_Release(shellitem);
                     }
@@ -2519,12 +2522,290 @@ static ULONG WINAPI IFileDialog2_fnRelease(IFileDialog2 *iface)
     return ref;
 }
 
+/* Opt-in GTK bridge used by the private Paint.NET Ubuntu runtime. */
+struct native_request
+{
+    char *data;
+    unsigned int size;
+    BOOL failed;
+};
+
+static void native_append(struct native_request *r, const char *s)
+{
+    size_t size = strlen(s) + 1;
+    char *data;
+    if (r->failed) return;
+    if (size > NATIVE_DIALOG_LIMIT - r->size || !(data = realloc(r->data, r->size + size)))
+    {
+        r->failed = TRUE;
+        return;
+    }
+    r->data = data;
+    memcpy(data + r->size, s, size);
+    r->size += size;
+}
+
+static void native_append_wide(struct native_request *r, const WCHAR *s)
+{
+    int size;
+    char *utf8;
+    if (!s) s = L"";
+    size = WideCharToMultiByte(CP_UTF8, 0, s, -1, NULL, 0, NULL, NULL);
+    if (!size || !(utf8 = malloc(size))) { r->failed = TRUE; return; }
+    WideCharToMultiByte(CP_UTF8, 0, s, -1, utf8, size, NULL, NULL);
+    native_append(r, utf8);
+    free(utf8);
+}
+
+static void native_append_uint(struct native_request *r, ULONG_PTR value)
+{
+    char number[32];
+    sprintf(number, "%Iu", value);
+    native_append(r, number);
+}
+
+static DWORD WINAPI native_dialog_thread(void *args)
+{
+    return WINE_UNIX_CALL(0, args);
+}
+
+static const char *native_next(const char **cursor, const char *end)
+{
+    const char *s = *cursor, *nul;
+    if (s >= end || !(nul = memchr(s, 0, end - s))) return NULL;
+    *cursor = nul + 1;
+    return s;
+}
+
+static HRESULT native_results(FileDialogImpl *This, const char *response, unsigned int size, BOOL *retry)
+{
+    const char *cursor = response, *end = response + size, *field;
+    WCHAR *path;
+    PIDLIST_ABSOLUTE *pidls = NULL, *resized;
+    IShellItemArray *results = NULL;
+    IShellItem *item = NULL, *folder = NULL;
+    UINT count = 0, index, i;
+    char *number_end;
+    unsigned long filter_index;
+    HRESULT hr = E_FAIL;
+
+    field = native_next(&cursor, end);
+    if (!field) return E_FAIL;
+    if (!strcmp(field, "CANCEL"))
+        return cursor == end ? HRESULT_FROM_WIN32(ERROR_CANCELLED) : E_FAIL;
+    if (strcmp(field, "OK") || !(field = native_next(&cursor, end))) return E_FAIL;
+    if (!*field || strspn(field, "0123456789") != strlen(field)) return E_FAIL;
+    filter_index = strtoul(field, &number_end, 10);
+    if (*number_end || (This->filterspec_count ? filter_index >= This->filterspec_count : filter_index)) return E_FAIL;
+    index = filter_index;
+    while (cursor < end)
+    {
+        if (!(field = native_next(&cursor, end))) goto done;
+        if (field[0] != '/') goto done;
+        path = wine_get_dos_file_name(field);
+        if (!path) goto done;
+        resized = realloc(pidls, (count + 1) * sizeof(*pidls));
+        if (!resized) { HeapFree(GetProcessHeap(), 0, path); hr = E_OUTOFMEMORY; goto done; }
+        pidls = resized;
+        /* Unlike SHParseDisplayName, this also represents a Save As target which does not exist yet. */
+        pidls[count] = SHSimpleIDListFromPath(path);
+        HeapFree(GetProcessHeap(), 0, path);
+        if (!pidls[count]) goto done;
+        count++;
+    }
+    if (!count || (count > 1 && (This->dlg_type == ITEMDLG_TYPE_SAVE || !(This->options & FOS_ALLOWMULTISELECT)))) goto done;
+    hr = SHCreateShellItemArrayFromIDLists(count, (PCIDLIST_ABSOLUTE *)pidls, &results);
+    if (FAILED(hr)) goto done;
+    if (This->psia_results) IShellItemArray_Release(This->psia_results);
+    This->psia_results = results;
+    if (This->psia_selection) IShellItemArray_Release(This->psia_selection);
+    This->psia_selection = results;
+    IShellItemArray_AddRef(results);
+    if (SUCCEEDED(IShellItemArray_GetItemAt(results, 0, &item)))
+    {
+        if (SUCCEEDED(IShellItem_GetDisplayName(item, SIGDN_FILESYSPATH, &path)))
+        {
+            set_file_name(This, PathFindFileNameW(path));
+            CoTaskMemFree(path);
+        }
+        if (SUCCEEDED(IShellItem_GetParent(item, &folder)))
+        {
+            if (This->psi_folder) IShellItem_Release(This->psi_folder);
+            This->psi_folder = folder;
+        }
+        IShellItem_Release(item);
+    }
+    if (index != This->filetypeindex)
+    {
+        This->filetypeindex = index;
+        if (This->filterspec_count) set_current_filter(This, This->filterspecs[index].pszSpec);
+        events_OnTypeChange(This);
+    }
+    events_OnFolderChange(This);
+    events_OnSelectionChange(This);
+    if ((This->options & FOS_OVERWRITEPROMPT) && This->dlg_type == ITEMDLG_TYPE_SAVE &&
+        SUCCEEDED(IShellItemArray_GetItemAt(This->psia_results, 0, &item)))
+    {
+        if (shell_item_exists(item)) hr = events_OnOverwrite(This, item, TRUE);
+        IShellItem_Release(item);
+        if (FAILED(hr)) { *retry = TRUE; goto done; }
+    }
+    hr = events_OnFileOk(This);
+    *retry = hr != S_OK;
+done:
+    for (i = 0; i < count; i++) ILFree(pidls[i]);
+    free(pidls);
+    return hr;
+}
+
+static HRESULT native_request_init(FileDialogImpl *This, struct native_request *request, ULONG_PTR xid)
+{
+    IShellItem *folder = This->psi_folder ? This->psi_folder :
+                        This->psi_setfolder ? This->psi_setfolder : This->psi_defaultfolder;
+    WCHAR *folder_path = NULL;
+    char *unix_folder = NULL, *unix_name = NULL;
+    UINT i;
+
+    if (folder && SUCCEEDED(IShellItem_GetDisplayName(folder, SIGDN_FILESYSPATH, &folder_path)))
+        unix_folder = wine_get_unix_file_name(folder_path);
+    if (This->set_filename && !PathIsRelativeW(This->set_filename))
+        unix_name = wine_get_unix_file_name(This->set_filename);
+    native_append(request, "PDNFD1");
+    native_append(request, This->dlg_type == ITEMDLG_TYPE_SAVE ? "save" : This->options & FOS_PICKFOLDERS ? "folder" : "open");
+    native_append_uint(request, This->options);
+    native_append_uint(request, This->filetypeindex);
+    native_append_wide(request, This->custom_title);
+    native_append_wide(request, This->custom_okbutton);
+    native_append(request, unix_folder ? unix_folder : "");
+    if (unix_name) native_append(request, unix_name);
+    else native_append_wide(request, This->set_filename);
+    native_append_wide(request, This->default_ext);
+    native_append_uint(request, xid);
+    native_append_uint(request, This->filterspec_count);
+    for (i = 0; i < This->filterspec_count; i++)
+    {
+        native_append_wide(request, This->filterspecs[i].pszName);
+        native_append_wide(request, This->filterspecs[i].pszSpec);
+    }
+    HeapFree(GetProcessHeap(), 0, unix_folder);
+    HeapFree(GetProcessHeap(), 0, unix_name);
+    CoTaskMemFree(folder_path);
+    return request->failed ? E_OUTOFMEMORY : S_OK;
+}
+
+static HRESULT show_native_dialog(FileDialogImpl *This, HWND owner)
+{
+    struct native_request request = {0};
+    struct native_dialog_params params = {0};
+    HWND root = GetAncestor(owner, GA_ROOT), prop_window, restore = GetForegroundWindow();
+    ULONG_PTR xid = 0;
+    WCHAR enabled[2];
+    HANDLE thread;
+    DWORD code, wait;
+    MSG msg;
+    BOOL disabled, retry, quit = FALSE;
+    int quit_code = 0;
+    HRESULT hr;
+
+    /* The bridge currently supports filesystem dialogs without custom controls. */
+    if (sizeof(void *) != 8 || !GetEnvironmentVariableW(L"WINE_NATIVE_FILE_DIALOG", enabled, ARRAY_SIZE(enabled)) ||
+        !__wine_unixlib_handle || !list_empty(&This->cctrls)) return E_NOTIMPL;
+    if (This->options & (FOS_ALLNONSTORAGEITEMS | FOS_CREATEPROMPT | FOS_SHAREAWARE)) return E_NOTIMPL;
+    if (This->dlg_hwnd) return E_UNEXPECTED;
+    if (!(params.response = malloc(NATIVE_DIALOG_LIMIT))) return E_OUTOFMEMORY;
+    if (!IsWindowVisible(restore) || GetWindowThreadProcessId(restore, NULL) != GetCurrentThreadId())
+        restore = NULL;
+    for (prop_window = root; prop_window && !xid; prop_window = GetWindow(prop_window, GW_OWNER))
+    {
+        if (!IsWindowVisible(prop_window)) continue;
+        xid = (ULONG_PTR)GetPropW(prop_window, L"__wine_x11_whole_window");
+        if (!restore) restore = prop_window;
+    }
+    TRACE("Native owner %p, modal root %p, restore %p, XID %Iu\n", owner, root, restore, xid);
+
+    /* IOleWindow needs its own handle; Close must never target the editor window. */
+    This->dlg_hwnd = CreateWindowExW(WS_EX_TOOLWINDOW, L"Static", This->custom_title,
+            WS_POPUP, 0, 0, 0, 0, owner, NULL, COMDLG32_hInstance, NULL);
+    if (!This->dlg_hwnd) { free(params.response); return E_FAIL; }
+    This->native_params = &params;
+    This->native_close_result = HRESULT_FROM_WIN32(ERROR_CANCELLED);
+    if (!GetCurrentActCtx(&This->user_actctx)) This->user_actctx = INVALID_HANDLE_VALUE;
+    disabled = root && IsWindowEnabled(root);
+    if (disabled) EnableWindow(root, FALSE);
+    if (This->filterspec_count) events_OnTypeChange(This);
+
+    do
+    {
+        retry = FALSE;
+        if (params.cancelled) break;
+        if (FAILED(hr = native_request_init(This, &request, xid))) break;
+        params.request = request.data;
+        params.request_size = request.size;
+        params.response_size = 0;
+        if (!(thread = CreateThread(NULL, 0, native_dialog_thread, &params, 0, NULL)))
+        {
+            hr = HRESULT_FROM_WIN32(GetLastError());
+            break;
+        }
+        /* Pump COM and UI messages while waiting for the native modal process. */
+        while ((wait = MsgWaitForMultipleObjectsEx(1, &thread, INFINITE, QS_ALLINPUT,
+                MWMO_INPUTAVAILABLE)) == WAIT_OBJECT_0 + 1)
+        {
+            while (PeekMessageW(&msg, NULL, 0, 0, PM_REMOVE))
+            {
+                if (msg.message == WM_QUIT)
+                {
+                    quit = TRUE;
+                    quit_code = msg.wParam;
+                    InterlockedExchange(&params.cancelled, TRUE);
+                    continue;
+                }
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        }
+        if (wait == WAIT_FAILED) InterlockedExchange(&params.cancelled, TRUE);
+        WaitForSingleObject(thread, INFINITE);
+        GetExitCodeThread(thread, &code);
+        CloseHandle(thread);
+        free(request.data);
+        memset(&request, 0, sizeof(request));
+        if (params.cancelled) break;
+        if (code)
+        {
+            WARN("Native file chooser unavailable (%#lx), using Wine dialog\n", code);
+            hr = E_NOTIMPL;
+            break;
+        }
+        hr = native_results(This, params.response, params.response_size, &retry);
+        /* A veto leaves Show pending, with the selected folder/name preserved. */
+    } while (retry);
+
+    if (params.cancelled) hr = This->native_close_result;
+    if (This->user_actctx != INVALID_HANDLE_VALUE) ReleaseActCtx(This->user_actctx);
+    This->user_actctx = INVALID_HANDLE_VALUE;
+    This->native_params = NULL;
+    DestroyWindow(This->dlg_hwnd);
+    This->dlg_hwnd = NULL;
+    if (disabled && IsWindow(root)) EnableWindow(root, TRUE);
+    if (IsWindow(restore)) SetForegroundWindow(restore);
+    else if (IsWindow(owner)) SetForegroundWindow(owner);
+    if (quit) PostQuitMessage(quit_code);
+    free(params.response);
+    free(request.data);
+    TRACE("Native file chooser returned %#lx\n", hr);
+    return hr;
+}
+
 static HRESULT WINAPI IFileDialog2_fnShow(IFileDialog2 *iface, HWND hwndOwner)
 {
     FileDialogImpl *This = impl_from_IFileDialog2(iface);
+    HRESULT hr;
     TRACE("%p (%p)\n", iface, hwndOwner);
 
     This->opendropdown_has_selection = FALSE;
+
+    if ((hr = show_native_dialog(This, hwndOwner)) != E_NOTIMPL) return hr;
 
     return create_dialog(This, hwndOwner);
 }
@@ -2886,7 +3167,12 @@ static HRESULT WINAPI IFileDialog2_fnClose(IFileDialog2 *iface, HRESULT hr)
     FileDialogImpl *This = impl_from_IFileDialog2(iface);
     TRACE("%p (0x%08lx)\n", This, hr);
 
-    if(This->dlg_hwnd)
+    if (This->native_params)
+    {
+        This->native_close_result = hr;
+        InterlockedExchange(&This->native_params->cancelled, TRUE);
+    }
+    else if(This->dlg_hwnd)
         EndDialog(This->dlg_hwnd, hr);
 
     return S_OK;

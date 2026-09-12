@@ -1,5 +1,6 @@
 EXTRADEFS = -D_COMDLG32_
 MODULE    = comdlg32.dll
+UNIXLIB   = comdlg32.so
 IMPORTLIB = comdlg32
 IMPORTS   = uuid shell32 shlwapi comctl32 user32 gdi32 advapi32
 DELAYIMPORTS = ole32 winspool
@@ -18,6 +19,7 @@ SOURCES = \
 	finddlg.c \
 	fontdlg.c \
 	itemdlg.c \
+	native_dialog.c \
 	pd32_collate.svg \
 	pd32_landscape.svg \
 	pd32_nocollate.svg \

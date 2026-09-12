@@ -61,8 +61,8 @@ sampling differences remain; they are not presented as finished rendering work.
 These runs include command-list rasterization, Color Management, and gradient
 rendering work. ICC conversion and primitive antialiasing/strokes still have
 measured differences. Gradient gamma-1 quantization and radial-clamp sampling
-also need refinement. Broader editing, native Linux dialogs, and hardware performance remain
-unverified.
+also need refinement. Broader editing and hardware performance remain unverified. The native GTK
+Open/Save path now has the focused application evidence described below.
 
 ## Verified baseline — September 11, 2026
 
@@ -981,3 +981,53 @@ plus 118 silenced TODOs, 361 total known TODOs, and no ordinary/flaky failures o
 skips. After restricting collapsed-inner-boundary handling to parallelograms,
 the rectangle, widening and primitive-combination regressions pass again with
 no ordinary failures.
+
+## Native GTK file chooser — September 12
+
+The Wine `comdlg32` module now has an opt-in Unix bridge and a GTK 3 helper.
+The launcher enables it for this private runtime. All 312 original Paint.NET
+binaries remain unchanged; the helper returns paths and the selected format,
+while the original application performs its own file I/O. Requests and replies
+are bounded NUL-delimited UTF-8 records; launching the helper does not use a shell.
+The installer updates both `comdlg32.dll` and its Unix library.
+
+The bridge keeps the Windows message loop responsive and restores the owner's
+enabled state. It uses a separate handle for `IOleWindow`, cancels only its own
+helper process on `IFileDialog::Close`, and preserves a pending Show when the
+application vetoes an accepted selection. A veto also stops later OnFileOk
+listeners from overriding it. The GTK helper changes the extension with the
+selected format and confirms overwrite against the final path after extension
+addition. UTF-8 filenames survive both directions of Wine's path conversion.
+
+In the unchanged editor, native Save As produced `native α first.png`; native
+Open loaded it. Switching the GTK format selector to Paint.NET changed the
+extension to `.pdn` and saved `native α first.pdn`. A fresh process loaded that
+PDN and exported `native β roundtrip.png` through GTK. Both PNGs are 2,974 bytes,
+and all 480,000 RGBA pixels match the original 800 × 600 image exactly. Both have
+SHA-256 `ff5bd6662c0823183dc97635149b2e80b08e621d289b76a7ad0bf9bae6490aa7`.
+The 10,076-byte PDN has SHA-256
+`c1967807b4030368cd28ff8c27f3139934e66431f2b4d2f1aee9dcd0e235bcc3`.
+Cancelling the native overwrite prompt preserves the target's hash and mtime.
+The local report is `work/classic/validation/native-chooser-roundtrip-report.json`.
+
+The new deterministic transport regression passes 103 checks without TODOs,
+failures or skips: Unicode paths, multiple selections, nonexistent save targets,
+invalid replies, cancellation, type selection, OnFileOk and overwrite vetoes,
+later listeners, owner state, separate dialog identity and prompt Close.
+The existing item-dialog suite passes 1,315 checks with 27 existing TODOs and
+no ordinary failures or skips. These are Wine tests; the GTK application
+workflow above is separate evidence.
+
+The private display initially lacked a window manager, and the remote session
+also retained an Alt modifier. Starting a private Openbox and reconnecting
+noVNC restored a valid desktop test environment. The bridge restores the visible
+foreground window instead of activating a child owner. After cancellation,
+Ctrl+Shift+S reopened Save As without an intervening editor click.
+
+This integration is not complete IFileDialog compatibility. Custom controls and
+unsupported option combinations use Wine's existing chooser. Live browsing
+callbacks, exact overwrite callback ordering, legacy common-dialog APIs,
+Wayland portals and other desktop chooser backends still need work. The current
+helper delivers the final state and reopens after a veto. Rendering, effects,
+more file formats, long-running editing and hardware optimization also remain
+unfinished; this milestone does not establish full Paint.NET compatibility.

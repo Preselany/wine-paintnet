@@ -32,6 +32,7 @@
 #include "commdlg.h"
 #include "cderr.h"
 #include "wine/debug.h"
+#include "wine/unixlib.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(commdlg);
 
@@ -64,6 +65,7 @@ BOOL WINAPI DllMain(HINSTANCE hInstance, DWORD Reason, LPVOID Reserved)
 
 		COMDLG32_hInstance = hInstance;
 		DisableThreadLibraryCalls(hInstance);
+		__wine_init_unix_call();
 
 		actctx.cbSize = sizeof(actctx);
 		actctx.hModule = COMDLG32_hInstance;

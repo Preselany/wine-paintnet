@@ -1261,3 +1261,25 @@ With both implemented, paintnet-20260912-100912-550122.log / pdncrash.68.log pas
 those paths but fails with AccessViolationException while disposing a
 DWriteTextLayout4 in the drawing-resource cache. Drawing remains unsuccessful;
 the next investigation is the text-layout/resource lifetime error.
+
+## Native chooser integration (September 12)
+
+- `test-native-dialog.sh`: **103 checks**, zero TODOs, failures or skips. The
+  deterministic peer tests Wine transport/lifecycle behavior rather than GTK.
+- Existing `comdlg32:itemdlg` with the bridge disabled: **1,315 checks**, 27 known
+  TODOs, zero ordinary failures or skips.
+- Official Paint.NET, all 312 binaries verified: GTK Save PNG → GTK Open PNG →
+  GTK Save PDN → fresh-process Open PDN → GTK Save PNG. Both PNGs exactly match
+  all 480,000 source RGBA pixels. Unicode names and format extension changes
+  are verified; cancelling overwrite preserves hash and modification time.
+- Logs: `work/classic/logs/native-chooser-final-transport.log`,
+  `native-chooser-upstream-itemdlg.log`, and application logs
+  `paintnet-20260912-124441-619006.log` / `paintnet-20260912-125344-623041.log`.
+- Report: `work/classic/validation/native-chooser-roundtrip-report.json`.
+- Normal activation QA now runs with a private Openbox on Xvfb `:93`. Reconnecting
+  noVNC cleared stale modifier state; cancellation followed by keyboard Save As
+  worked without clicking the editor. The real user's desktop remains separate.
+
+No native Windows conformance claim is made for the GTK transport test. Remaining
+callback, custom-control and desktop-backend limitations are in `README.md` and
+`STATUS.md`.

@@ -17,6 +17,14 @@ for module in "$@"; do
     fi
     cp "$built" "$wine_root/lib/wine/x86_64-windows/$module.dll"
     cp "$built" "$WINEPREFIX/drive_c/windows/system32/$module.dll"
+    unix_built="$work_root/build/dlls/$module/$module.so"
+    unix_installed="$wine_root/lib/wine/x86_64-unix/$module.so"
+    if [[ -s "$unix_built" ]]; then
+        if [[ -e "$unix_installed" && ! -e "$work_root/stock-modules/$module.so" ]]; then
+            cp "$unix_installed" "$work_root/stock-modules/"
+        fi
+        cp "$unix_built" "$unix_installed"
+    fi
     if [[ "$module" == windowscodecs ]]; then
         WINEDEBUG=-all "$wine_root/bin/wine" regsvr32 /s windowscodecs.dll
     fi

@@ -7,5 +7,6 @@ SOURCES = \
 	finddlg.c \
 	fontdlg.c \
 	itemdlg.c \
+	native_dialog.c \
 	printdlg.c \
 	rsrc.rc
