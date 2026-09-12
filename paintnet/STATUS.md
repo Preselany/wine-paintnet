@@ -16,8 +16,9 @@ and path-combination support now also pass that control. Startup
 now passes CompositorController activation with the initial lifecycle support.
 Window feedback configuration now also works. The feature-level query now also passes. Transformed ellipse widening now
 also passes brush activation. Offset transforms now translate effect graph inputs
-without an extra render pass. Canvas rendering currently fails at command-list
-DrawBitmap replay.
+without an extra render pass. Local DrawBitmap replay and the Invert effect now
+advance brush initialization to unsupported Gaussian Blur evaluation. A separate
+canvas path also reaches missing command-list glyph replay.
 The editor remains unusable, and compositor visual presentation is unimplemented.
 
 Command-list DrawImage replay and source-copy compositing are local prototypes.
@@ -619,3 +620,16 @@ composition. The focused test passes all 1,153 checks on Wine and Windows.
 
 The application now passes the offset graph and reaches command-list DrawBitmap,
 which is the next unsupported replay command. The editor is still unusable.
+
+## Invert effect — September 12
+
+Invert is registered and rendered by the pointwise pixel-shader path. It preserves
+alpha, inverts premultiplied color without clipping HDR values, and handles zero
+alpha as measured on Windows. Single/double inversion, both supported source
+alpha modes, offsets, three display scales, and feature levels 10/11 match the
+native probes. The focused regression passes 630 checks on both platforms.
+
+Startup now fails while measuring a brush image containing Gaussian Blur. A
+separate main-thread path also exposes missing command-list glyph replay. Bitmap
+replay remains a local prototype: bounds match the non-perspective reference
+cases, but antialiased edge and filtering differences remain.

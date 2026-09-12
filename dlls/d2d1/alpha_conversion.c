@@ -1,4 +1,4 @@
-/* Direct2D premultiplied / straight alpha conversion.
+/* Direct2D alpha conversion and pointwise color inversion.
  * SPDX-License-Identifier: LGPL-2.1-or-later
  */
 #include "d2d1_private.h"
@@ -92,6 +92,12 @@ void d2d_alpha_conversion_init_builtin(struct d2d_factory *factory)
         L"<Property name='Category' type='string' value='Color'/>"
         L"<Property name='Description' type='string' value='Divides color by alpha.'/>"
         L"<Inputs minimum='1' maximum='1'><Input name='Source'/></Inputs></Effect>";
+    static const WCHAR invert[] =
+        L"<?xml version='1.0'?><Effect><Property name='DisplayName' type='string' value='Invert'/>"
+        L"<Property name='Author' type='string' value='The Wine Project'/>"
+        L"<Property name='Category' type='string' value='Color'/>"
+        L"<Property name='Description' type='string' value='Inverts color while preserving alpha.'/>"
+        L"<Inputs minimum='1' maximum='1'><Input name='Source'/></Inputs></Effect>";
     HRESULT hr;
     if (FAILED(hr = d2d_factory_register_builtin_effect(factory, &CLSID_D2D1Premultiply,
             premultiply, NULL, 0, alpha_conversion_factory)))
@@ -99,6 +105,9 @@ void d2d_alpha_conversion_init_builtin(struct d2d_factory *factory)
     if (FAILED(hr = d2d_factory_register_builtin_effect(factory, &CLSID_D2D1UnPremultiply,
             unpremultiply, NULL, 0, alpha_conversion_factory)))
         WARN("Failed to register UnPremultiply, hr %#lx.\n", hr);
+    if (FAILED(hr = d2d_factory_register_builtin_effect(factory, &CLSID_D2D1Invert,
+            invert, NULL, 0, alpha_conversion_factory)))
+        WARN("Failed to register Invert, hr %#lx.\n", hr);
 }
 
 static HRESULT create_shaders(struct alpha_conversion_effect *effect, ID3D11Device1 *device)
@@ -109,10 +118,11 @@ static HRESULT create_shaders(struct alpha_conversion_effect *effect, ID3D11Devi
         "return float4(uv*float2(2,-2)+float2(-1,1),0,1);}";
     static const char pixel_source[] =
         "Texture2D<float4> image:register(t0);"
-        "cbuffer C:register(b0) {uint unpremultiply;uint3 padding;}"
+        "cbuffer C:register(b0) {uint operation;uint3 padding;}"
         "float4 main(float4 pos:SV_POSITION):SV_TARGET {"
         "float4 color=image.Load(int3(pos.xy,0));"
-        "if (unpremultiply) color.rgb=color.a == 0 ? 0 : color.rgb/color.a;"
+        "if (operation == 2) color.rgb=color.a == 0 ? 0 : color.a-color.rgb;"
+        "else if (operation == 1) color.rgb=color.a == 0 ? 0 : color.rgb/color.a;"
         "else color.rgb*=color.a; return color;}";
     const char *sources[] = {vertex_source, pixel_source}, *profiles[] = {"vs_4_0", "ps_4_0"};
     ID3DBlob *code, *errors;
@@ -143,14 +153,26 @@ static HRESULT create_shaders(struct alpha_conversion_effect *effect, ID3D11Devi
     return S_OK;
 }
 
-HRESULT d2d_alpha_conversion_render(struct d2d_effect *effect, struct d2d_device_context *context,
-        const struct d2d_effect_image *input, BOOL unpremultiply, struct d2d_effect_image *output)
+static HRESULT render_color(struct d2d_effect *effect, struct d2d_device_context *context,
+        const struct d2d_effect_image *input, UINT operation, struct d2d_effect_image *output)
 {
     struct alpha_conversion_effect *conversion = impl_from_ID2D1EffectImpl(effect->impl);
-    UINT params[4] = {unpremultiply, 0, 0, 0};
+    UINT params[4] = {operation, 0, 0, 0};
     HRESULT hr;
     if (effect->impl->lpVtbl != &alpha_conversion_vtbl) return E_UNEXPECTED;
     if (FAILED(hr = create_shaders(conversion, context->d3d_device))) return hr;
     return d2d_effect_render_pixels(context, conversion->vs, conversion->ps, input, 1,
             params, sizeof(params), NULL, output);
+}
+
+HRESULT d2d_alpha_conversion_render(struct d2d_effect *effect, struct d2d_device_context *context,
+        const struct d2d_effect_image *input, BOOL unpremultiply, struct d2d_effect_image *output)
+{
+    return render_color(effect, context, input, unpremultiply ? 1 : 0, output);
+}
+
+HRESULT d2d_invert_render(struct d2d_effect *effect, struct d2d_device_context *context,
+        const struct d2d_effect_image *input, struct d2d_effect_image *output)
+{
+    return render_color(effect, context, input, 2, output);
 }

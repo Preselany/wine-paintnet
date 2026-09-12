@@ -952,3 +952,30 @@ All 312 original application binaries remain unchanged. The application now
 passes offset evaluation and fails at command 12 (DrawBitmap) during command-list
 replay (`paintnet-20260912-063228-439553.log`, `pdncrash.44.log`). Editing, final
 compositor presentation, and native file dialogs remain unverified.
+
+## Invert and bitmap-replay progress — September 12
+
+Native job 105 measures single/double inversion on float images with positive,
+zero, negative, tiny, and above-one alpha values. All eight result records across
+feature levels 11 and 10 match Wine. Native job 107 adds 72 graph/DPI/unit cases
+per feature level; all bounds and sampled pixels match. The focused regression
+passes 630 checks on Windows job 108 and Wine, including source preservation.
+The earlier job 106 used a mismatched alpha format for its source-copy check and
+is superseded by the corrected test; this was a test setup error.
+
+The full focused suite runs 33 cases / 180,846 checks, with 86 TODO failures and
+zero ordinary failures (`invert-full-focused.log`).
+
+Local bitmap-replay probe 104 has 128 cases. The 112 non-perspective bounds now
+match Windows; 36 of those cases retain pixel differences in antialiasing or
+filtering. Sixteen perspective cases remain unsupported. This prototype is not
+yet committed as complete command-list rendering support. With it, the unchanged
+application passes command 12 and fails at missing Invert registration in
+`paintnet-20260912-064937-448961.log` (`pdncrash.45.log`).
+
+After Invert implementation, all 312 application binaries still pass verification.
+`paintnet-20260912-065431-452073.log` (`pdncrash.46.log`) fails during brush image
+bounds evaluation. The final unsupported input is Gaussian Blur (effect
+`000074CCA4F25220`, CLSID `1feb6d69-2fe6-4ac9-8c58-1d7f93e7a6a5`). The main
+thread separately reports unsupported command 8 (DrawGlyphRun) in a command list.
+The editor remains unusable.

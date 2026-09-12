@@ -3250,7 +3250,7 @@ enum d2d_effect_kind
 {
     EFFECT_PASSTHROUGH, EFFECT_GRAPH, EFFECT_ALPHA_MASK, EFFECT_CONVOLVE_MATRIX,
     EFFECT_CONTRAST, EFFECT_EMBOSS, EFFECT_OPACITY,
-    EFFECT_PREMULTIPLY, EFFECT_UNPREMULTIPLY, EFFECT_WHITE_LEVEL, EFFECT_DRAW_TRANSFORM, EFFECT_OFFSET,
+    EFFECT_PREMULTIPLY, EFFECT_UNPREMULTIPLY, EFFECT_WHITE_LEVEL, EFFECT_DRAW_TRANSFORM, EFFECT_OFFSET, EFFECT_INVERT,
 };
 
 struct d2d_evaluation_source
@@ -3438,6 +3438,7 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
             else if (IsEqualGUID(&clsid, &CLSID_D2D1ConvolveMatrix)) kind = EFFECT_CONVOLVE_MATRIX;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1Contrast)) kind = EFFECT_CONTRAST;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1Emboss)) kind = EFFECT_EMBOSS;
+            else if (IsEqualGUID(&clsid, &CLSID_D2D1Invert)) kind = EFFECT_INVERT;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1Opacity)) kind = EFFECT_OPACITY;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1WhiteLevelAdjustment)) kind = EFFECT_WHITE_LEVEL;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1Premultiply)) kind = EFFECT_PREMULTIPLY;
@@ -3602,6 +3603,11 @@ have_result:
             else if (frame->kind == EFFECT_WHITE_LEVEL)
             {
                 if (!bounds_only && FAILED(hr = d2d_white_level_render(frame->effect, context, frame->inputs, &result)))
+                    goto done;
+            }
+            else if (frame->kind == EFFECT_INVERT)
+            {
+                if (!bounds_only && FAILED(hr = d2d_invert_render(frame->effect, context, frame->inputs, &result)))
                     goto done;
             }
             else if (frame->kind == EFFECT_OPACITY)
