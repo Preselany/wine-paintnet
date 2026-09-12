@@ -637,3 +637,30 @@ The editor still has not opened.
 The broad Direct2D suite preserves its prior result: 17,157 checks, 237 todos,
 one skip, and only the two known unexpected todo successes at d2d1.c:15659.
 Log: d2d1-suite-effect-node.log. No new broad-suite failures were observed.
+
+## Alpha conversion
+
+alpha_conversion passes 1,198 checks with no failures, todos, or skips on both
+Windows (046-alpha-tests) and Wine (alpha-conversion-tests.log). It tests both
+default Direct3D feature level and explicitly requested level 10. The standalone
+probe's 512 RGBA values match Windows exactly at both levels:
+044-node-alpha--alpha-conversion.log, 045-alpha-fl10--alpha-conversion.log,
+alpha-conversion-first-render.log, and alpha-conversion-fl10.log. Coverage
+includes zero/negative/tiny/greater-than-one alpha, extended RGB, premultiply,
+unpremultiply, both chain orders, and premultiplied/ignore source metadata.
+
+The preceding seventeen focused cases pass 105,917 checks with one existing
+animation todo: alpha-conversion-focused.log. Including the new case gives
+107,115 checks. The first prototype registration failed because its XML omitted
+the declaration required by Wine's parser; it was corrected before pixel tests.
+
+The unchanged app run paintnet-20260912-022725-314447.log verifies all 312 runtime
+binaries and now reaches DrawingContext.EndDraw in ColorsForm.SetColorAddIcon.
+Crash pdncrash.25.log reports E_NOTIMPL. The trace follows the Color Management
+wrapper's passthrough graph to an ID2D1CommandList input, whose rasterization is
+not implemented. The Color Management prototype remains uncommitted and has
+known custom-ICC differences. No editor or application round trip is claimed.
+
+The broad Direct2D suite remains at 17,157 checks, 237 todos, one skip, and the
+two known unexpected todo successes at d2d1.c:15659; no new failures. Log:
+d2d1-suite-alpha-conversion.log.

@@ -8,6 +8,7 @@ VER_FILEDESCRIPTION_STR = "Wine Direct2D"
 VER_PRODUCTVERSION      = 6,2,9200,16765
 
 SOURCES = \
+	alpha_conversion.c \
 	alpha_mask.c \
 	bitmap_source.c \
 	bitmap.c \

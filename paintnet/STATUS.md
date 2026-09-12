@@ -8,13 +8,13 @@ managed renderer does not count toward this project's compatibility status.
 
 ## Current state — September 12, 2026
 
-The editor still does not open. Effect-node wrapping now renders nested and
-chained effects with native-verified pixels and graph errors. Seventeen focused
-cases pass 105,917 Wine checks, with one existing animation todo. A local Color
-Management prototype advances startup to the missing UnPremultiply effect;
-that prototype still has ICC rendering discrepancies and is not committed
-support. Startup, editing, save/reopen, native dialogs, and hardware performance
-remain open.
+The editor still does not open. Effect-node wrapping and alpha conversion now
+have native-verified rendering. Eighteen focused cases pass 107,115 Wine checks,
+with one existing animation todo. With a local Color Management prototype,
+startup reaches drawing the color-picker icon and fails when a recorded command
+list is used as an effect input. That prototype still has ICC rendering
+discrepancies and is not committed support. Startup, editing, save/reopen,
+native dialogs, and hardware performance remain open.
 
 ## Verified baseline — September 11, 2026
 
@@ -369,6 +369,23 @@ fan-out remain open; this is not complete custom-graph support.
 
 With the separate, uncommitted Color Management prototype, Paint.NET passes this
 API and stops at CLSID_D2D1UnPremultiply during ConvertAlphaEffect initialization.
+
+## Alpha conversion
+
+Premultiply and UnPremultiply render through Shader Model 4 pixel shaders, so
+the implementation also works at Direct3D feature level 10. RGB is multiplied
+or divided by stored alpha; zero alpha produces zero RGB. Negative values,
+HDR values, small alpha, and alpha itself remain unclamped. Shader objects are
+created on first use and retained by the effect; pixel data stays on the GPU.
+
+The native and Wine regression tests each pass 1,198 checks. The standalone
+probe matches all 512 RGBA values at default feature level and at feature level
+10, including chained conversions and premultiplied/ignore bitmap metadata.
+Straight-alpha float bitmap creation is rejected by native Direct2D.
+
+With the uncommitted Color Management prototype, Paint.NET passes alpha-effect
+creation and reaches a recorded command list inside the color-icon effect graph.
+Command-list rasterization is the next rendering blocker; the editor is unopened.
 
 ## Observed remaining failures
 
