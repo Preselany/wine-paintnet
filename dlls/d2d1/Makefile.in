@@ -35,4 +35,5 @@ SOURCES = \
 	sprite_batch.c \
 	state_block.c \
 	stroke.c \
+	white_level.c \
 	wic_render_target.c

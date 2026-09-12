@@ -17,4 +17,5 @@ SOURCES = \
 	emboss.c \
 	opacity.c \
 	histogram.c \
+	white_level.c \
 	opacity_metadata.c

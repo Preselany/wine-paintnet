@@ -8,14 +8,17 @@ managed renderer does not count toward this project's compatibility status.
 
 ## Current state — September 12, 2026
 
-The editor is not yet usable. The local working tree now passes the color-icon
-render and window creation, reaching creation of the first blank document.
-Startup passes the busy-spinner animation and now fails when the zoom slider
-requests ID2D1GradientStopCollection1 from a legacy gradient-stop collection. This run includes uncommitted command-list rasterization and
-Color Management prototypes; the latter still has ICC discrepancies, and
-primitive antialiasing/stroke rendering also needs correction. CoreMessaging
-queues now have native-verified callbacks, priorities, identity, and shutdown.
-Editing, save/reopen, native dialogs, and hardware performance remain open.
+The editor is not yet usable. The local working tree passes color-icon rendering,
+window creation, the busy-spinner animation, zoom-slider gradient setup, and the
+WhiteLevelAdjustment effect. Startup now fails when Paint.NET's SrgbToLinear
+custom shader calls ID2D1DrawInfo::SetInputDescription for its image input.
+The custom draw-transform implementation currently renders source-only shaders.
+
+These runs include command-list rasterization, Color Management, and gradient
+rendering work. ICC conversion and primitive antialiasing/strokes still have
+measured differences. Gradient gamma-1 quantization and radial-clamp sampling
+also need refinement. Editing, save/reopen, native Linux dialogs, and hardware
+performance remain unverified.
 
 ## Verified baseline — September 11, 2026
 
@@ -455,3 +458,12 @@ No editing, image correctness, or full application compatibility is claimed.
 
 Native GTK file-dialog work from the earlier experiment is preserved separately
 and has not been deployed to this baseline.
+
+## White-level adjustment
+
+The builtin WhiteLevelAdjustment effect now preserves both FLOAT properties,
+including negative, infinite, and NaN values, with the native default of 80 nits.
+Rendering multiplies RGB by InputWhiteLevel / OutputWhiteLevel and preserves the
+stored alpha. The pixel-shader path supports feature level 10 and avoids CPU
+readback. The Windows reference probe and focused regression cover metadata,
+zero and negative levels, HDR values, and premultiplied/ignored-alpha inputs.

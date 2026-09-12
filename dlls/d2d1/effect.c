@@ -1921,6 +1921,7 @@ void d2d_effects_init_builtins(struct d2d_factory *factory)
     d2d_emboss_init_builtin(factory);
     d2d_opacity_init_builtin(factory);
     d2d_alpha_conversion_init_builtin(factory);
+    d2d_white_level_init_builtin(factory);
 }
 
 /* Same syntax is used for value and default values. */
@@ -3198,7 +3199,7 @@ enum d2d_effect_kind
 {
     EFFECT_PASSTHROUGH, EFFECT_GRAPH, EFFECT_ALPHA_MASK, EFFECT_CONVOLVE_MATRIX,
     EFFECT_CONTRAST, EFFECT_EMBOSS, EFFECT_OPACITY,
-    EFFECT_PREMULTIPLY, EFFECT_UNPREMULTIPLY,
+    EFFECT_PREMULTIPLY, EFFECT_UNPREMULTIPLY, EFFECT_WHITE_LEVEL,
 };
 
 struct d2d_evaluation_source
@@ -3322,6 +3323,7 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
             else if (IsEqualGUID(&clsid, &CLSID_D2D1Contrast)) kind = EFFECT_CONTRAST;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1Emboss)) kind = EFFECT_EMBOSS;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1Opacity)) kind = EFFECT_OPACITY;
+            else if (IsEqualGUID(&clsid, &CLSID_D2D1WhiteLevelAdjustment)) kind = EFFECT_WHITE_LEVEL;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1Premultiply)) kind = EFFECT_PREMULTIPLY;
             else if (IsEqualGUID(&clsid, &CLSID_D2D1UnPremultiply)) kind = EFFECT_UNPREMULTIPLY;
             else
@@ -3456,6 +3458,11 @@ have_result:
             {
                 if (!bounds_only && FAILED(hr = d2d_alpha_conversion_render(frame->effect, context, frame->inputs,
                         frame->kind == EFFECT_UNPREMULTIPLY, &result))) goto done;
+            }
+            else if (frame->kind == EFFECT_WHITE_LEVEL)
+            {
+                if (!bounds_only && FAILED(hr = d2d_white_level_render(frame->effect, context, frame->inputs, &result)))
+                    goto done;
             }
             else if (frame->kind == EFFECT_OPACITY)
             {
@@ -3711,7 +3718,10 @@ static HRESULT STDMETHODCALLTYPE d2d_effect_properties_GetValue(ID2D1Properties 
     TRACE("iface %p, index %#x, type %u, value %p, value_size %u.\n", iface, index, type, value, value_size);
 
     if (!(prop = d2d_effect_properties_get_property_by_index(properties, index)))
+    {
+        if (value) memset(value, 0, value_size);
         return D2DERR_INVALID_PROPERTY;
+    }
 
     return d2d_effect_property_get_value(properties, prop, type, value, value_size);
 }

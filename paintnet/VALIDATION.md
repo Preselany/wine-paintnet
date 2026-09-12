@@ -732,3 +732,20 @@ before checking its count. That strengthened test passes 227 checks on Windows
 and Wine (057-queue-dispatch-lifetime--queue-tests.log). The final twenty-case
 suite passes 109,524 checks, zero failures, with one existing animation todo
 (keyframes-queue-focused.log).
+
+## WhiteLevelAdjustment — September 12, 2026
+
+- Native job 061 and Wine `white-level-metadata.log`: all 170 API and pixel
+  records match exactly, including 20 rendered cases / 1,280 RGBA components.
+- Native job 063 and Wine `white-gradient-focused.log`: `white_level` executes
+  3,118 checks with zero failures at default and forced feature level 10.
+- Existing 20-case focused suite: 109,524 checks, zero failures, one existing
+  UIAnimation todo (`white-gradient-full-focused.log`).
+- The unchanged app passes the WhiteLevelAdjustment initialization and reaches
+  a one-input custom shader. Run `paintnet-20260912-040320-355817.log` and crash
+  report 30 identify `ID2D1DrawInfo::SetInputDescription` as the next failure.
+- White-level default subproperties are populated explicitly because the
+  existing effect XML parser still ignores nested property metadata. The
+  missing-property getter now clears the caller buffer, as the native probe
+  demonstrates for absent minimum/maximum metadata.
+- Reference API: https://learn.microsoft.com/en-us/windows/win32/api/d2d1effects_2/ne-d2d1effects_2-d2d1_whiteleveladjustment_prop
