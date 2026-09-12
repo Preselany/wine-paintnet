@@ -792,3 +792,18 @@ The existing effect_node (222 checks) and draw_transform (75,824 checks)
 regressions still pass. Paint.NET now gets through DocumentStrip bounds
 validation; pdncrash.32.log instead records a DrawImage command replay failure
 at EndDraw. All 312 original Paint.NET runtime binaries remain unchanged.
+
+## Custom image-input shader validation — September 12
+
+The native draw-input reference (job 065) and Wine agree on all 95 API records,
+72 bounds/draw cases, and 18,432 RGBA values to within 1.5e-8. Coverage spans
+six output precisions, three channel depths, full and cropped images, offset
+sampling, 192 DPI, and point versus linear filters. Matching native sampling
+required clamped texture addressing rather than transparent border addressing.
+
+The independent focused draw_input test passes 18,971 checks on both native
+Windows/WARP (job 068) and Wine with no failures or skipped cases. The native
+expected pixel arrays are retained in the test; tolerance is 1e-6. Source-only
+draw_transform (75,824 checks) and wrapped effect_node (222 checks) also pass.
+This does not validate arbitrary multi-input shaders, mipmap realization,
+expanded-region propagation, or completed application rendering.

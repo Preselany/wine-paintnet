@@ -30,11 +30,13 @@ static HRESULT create_buffer(ID3D11Device1 *device, const void *data, UINT size,
 static HRESULT create_vertex_shader(ID3D11Device1 *device, ID3D11VertexShader **shader)
 {
     static const char source[] =
-        "cbuffer C : register(b0) {float4 region;}"
-        "struct O {float4 pos:SV_POSITION; float4 scene:SCENE_POSITION;};"
+        "cbuffer C : register(b0) {float4 region; float4 inputs[8];}"
+        "struct O {float4 pos:SV_POSITION; float4 scene:SCENE_POSITION; float4 tc[8]:TEXCOORD0;};"
         "O main(uint id:SV_VertexID) {O o; float2 uv=float2((id<<1)&2,id&2);"
         "o.pos=float4(uv*float2(2,-2)+float2(-1,1),0,1);"
-        "o.scene=float4(region.xy+uv*region.zw,0,1); return o;}";
+        "o.scene=float4(region.xy+uv*region.zw,0,1);"
+        "[unroll] for(uint i=0;i<8;++i) o.tc[i]=float4((o.scene.xy-inputs[i].xy)*inputs[i].zw,inputs[i].zw);"
+        "return o;}";
     ID3DBlob *code = NULL, *errors = NULL;
     HRESULT hr;
 
@@ -52,7 +54,8 @@ static HRESULT create_vertex_shader(ID3D11Device1 *device, ID3D11VertexShader **
 }
 
 HRESULT d2d_custom_effect_render(struct d2d_device_context *context, struct d2d_render_info *info,
-        BOOL linkable_output, struct d2d_effect_image *output)
+        const struct d2d_effect_image *inputs, UINT input_count, BOOL linkable_output,
+        struct d2d_effect_image *output)
 {
     ID3D11Device1 *device = context->d3d_device;
     ID3D11DeviceContext1 *immediate;
@@ -60,6 +63,8 @@ HRESULT d2d_custom_effect_render(struct d2d_device_context *context, struct d2d_
     ID3D11Texture2D *texture = NULL;
     ID3D11RenderTargetView *rtv = NULL;
     ID3D11BlendState *blend = NULL;
+    ID3D11ShaderResourceView *views[8] = {0};
+    ID3D11SamplerState *samplers[8] = {0};
     ID3D11Buffer *vs_constants = NULL, *ps_constants = NULL;
     IDXGISurface *surface = NULL;
     D3D11_TEXTURE2D_DESC texture_desc = {0};
@@ -70,11 +75,14 @@ HRESULT d2d_custom_effect_render(struct d2d_device_context *context, struct d2d_
     struct d2d_bitmap *bitmap;
     D2D1_SIZE_U size;
     D2D1_BUFFER_PRECISION precision = info->precision;
-    float region[4], clear[4] = {0,0,0,1};
+    struct {float region[4], inputs[8][4];} vertex_params = {0};
+    float clear[4] = {0,0,0,1};
+    unsigned int i;
     BOOL single_channel = info->depth == D2D1_CHANNEL_DEPTH_1 && (!linkable_output || info->cached);
     HRESULT hr;
 
     output->bitmap = NULL;
+    if (input_count > ARRAY_SIZE(views)) return E_NOTIMPL;
     if (!info->ps) return D2DERR_INVALID_GRAPH_CONFIGURATION;
     if ((INT64)output->rect.right - output->rect.left > D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION
             || (INT64)output->rect.bottom - output->rect.top > D3D11_REQ_TEXTURE2D_U_OR_V_DIMENSION)
@@ -126,9 +134,34 @@ HRESULT d2d_custom_effect_render(struct d2d_device_context *context, struct d2d_
     texture_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
     if (FAILED(hr = ID3D11Device1_CreateTexture2D(device, &texture_desc, NULL, &texture))) goto done;
     if (FAILED(hr = ID3D11Device1_CreateRenderTargetView(device, (ID3D11Resource *)texture, NULL, &rtv))) goto done;
-    region[0] = output->rect.left; region[1] = output->rect.top;
-    region[2] = size.width; region[3] = size.height;
-    if (FAILED(hr = create_buffer(device, region, sizeof(region), &vs_constants))) goto done;
+    vertex_params.region[0] = output->rect.left; vertex_params.region[1] = output->rect.top;
+    vertex_params.region[2] = size.width; vertex_params.region[3] = size.height;
+    for (i = 0; i < input_count; ++i)
+    {
+        D3D11_SAMPLER_DESC sampler_desc = {0};
+        ID3D11Device *input_device;
+
+        bitmap = unsafe_impl_from_ID2D1Bitmap(inputs[i].bitmap);
+        if (!bitmap->srv) {hr = D2DERR_BITMAP_CANNOT_DRAW; goto done;}
+        if (context->target.type == D2D_TARGET_BITMAP && bitmap->resource == context->target.bitmap->resource)
+        {hr = D2DERR_BITMAP_BOUND_AS_TARGET; goto done;}
+        ID3D11Resource_GetDevice(bitmap->resource, &input_device);
+        ID3D11Device_Release(input_device);
+        if (input_device != (ID3D11Device *)device) {hr = D2DERR_WRONG_RESOURCE_DOMAIN; goto done;}
+        /* Additional mip levels require a mipmapped input realization. */
+        if (info->input_descriptions[i].levelOfDetailCount > 1) {hr = E_NOTIMPL; goto done;}
+        views[i] = bitmap->srv;
+        sampler_desc.Filter = (D3D11_FILTER)info->input_descriptions[i].filter;
+        sampler_desc.AddressU = sampler_desc.AddressV = sampler_desc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+        sampler_desc.MaxAnisotropy = 16;
+        sampler_desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+        if (FAILED(hr = ID3D11Device1_CreateSamplerState(device, &sampler_desc, &samplers[i]))) goto done;
+        vertex_params.inputs[i][0] = inputs[i].rect.left;
+        vertex_params.inputs[i][1] = inputs[i].rect.top;
+        vertex_params.inputs[i][2] = 1.0f / bitmap->pixel_size.width;
+        vertex_params.inputs[i][3] = 1.0f / bitmap->pixel_size.height;
+    }
+    if (FAILED(hr = create_buffer(device, &vertex_params, sizeof(vertex_params), &vs_constants))) goto done;
     if (FAILED(hr = create_buffer(device, info->constants, info->constants_size, &ps_constants))) goto done;
     blend_desc.RenderTarget[0].RenderTargetWriteMask = single_channel ? D3D11_COLOR_WRITE_ENABLE_RED : D3D11_COLOR_WRITE_ENABLE_ALL;
     if (FAILED(hr = ID3D11Device1_CreateBlendState(device, &blend_desc, &blend))) goto done;
@@ -147,6 +180,8 @@ HRESULT d2d_custom_effect_render(struct d2d_device_context *context, struct d2d_
     ID3D11DeviceContext1_VSSetConstantBuffers(immediate, 0, 1, &vs_constants);
     ID3D11DeviceContext1_PSSetShader(immediate, info->ps, NULL, 0);
     ID3D11DeviceContext1_PSSetConstantBuffers(immediate, 0, 1, &ps_constants);
+    ID3D11DeviceContext1_PSSetShaderResources(immediate, 0, input_count, views);
+    ID3D11DeviceContext1_PSSetSamplers(immediate, 0, input_count, samplers);
     ID3D11DeviceContext1_Draw(immediate, 3, 0);
     ID3D11DeviceContext1_ClearState(immediate);
     ID3D11DeviceContext1_SwapDeviceContextState(immediate, previous, NULL);
@@ -158,6 +193,8 @@ HRESULT d2d_custom_effect_render(struct d2d_device_context *context, struct d2d_
     if (SUCCEEDED(hr = d2d_bitmap_create_shared(context, &IID_IDXGISurface, surface, &bitmap_desc, &bitmap)))
         output->bitmap = (ID2D1Bitmap *)&bitmap->ID2D1Bitmap1_iface;
 done:
+    for (i = 0; i < input_count; ++i)
+        if (samplers[i]) ID3D11SamplerState_Release(samplers[i]);
     if (surface) IDXGISurface_Release(surface);
     if (blend) ID3D11BlendState_Release(blend);
     if (vs_constants) ID3D11Buffer_Release(vs_constants);

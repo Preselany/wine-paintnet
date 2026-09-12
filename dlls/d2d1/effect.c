@@ -3166,14 +3166,55 @@ static HRESULT d2d_custom_effect_evaluate(struct d2d_effect *effect, struct d2d_
     }
     output->rect.right = max(output->rect.left, output->rect.right);
     output->rect.bottom = max(output->rect.top, output->rect.bottom);
-    return d2d_custom_effect_render(context, node->render_info, linkable_output, output);
+    return d2d_custom_effect_render(context, node->render_info, NULL, 0, linkable_output, output);
+}
+
+static HRESULT d2d_custom_node_evaluate(struct d2d_device_context *context, struct d2d_transform_node *node,
+        const struct d2d_effect_image *inputs, UINT count, const D2D1_RECT_L *region,
+        BOOL bounds_only, BOOL linkable, struct d2d_effect_image *output)
+{
+    D2D1_RECT_L rects[8], opaque_rects[8] = {{0}}, requested[8], opaque;
+    ID2D1DrawTransform *transform;
+    unsigned int i;
+    HRESULT hr;
+
+    if (count > ARRAY_SIZE(rects)) return E_NOTIMPL;
+    if (FAILED(hr = ID2D1TransformNode_QueryInterface(node->object, &IID_ID2D1DrawTransform,
+            (void **)&transform))) return E_NOTIMPL;
+    for (i = 0; i < count; ++i)
+    {
+        if (inputs[i].bitmap)
+        {
+            struct d2d_bitmap *bitmap = unsafe_impl_from_ID2D1Bitmap(inputs[i].bitmap);
+            if (bitmap->format.alphaMode == D2D1_ALPHA_MODE_IGNORE) opaque_rects[i] = inputs[i].rect;
+        }
+        rects[i] = inputs[i].rect;
+    }
+    hr = ID2D1DrawTransform_MapInputRectsToOutputRect(transform, count ? rects : NULL,
+            count ? opaque_rects : NULL, count, &output->rect, &opaque);
+    if (FAILED(hr) || bounds_only) goto done;
+    if (region)
+    {
+        output->rect.left = max(output->rect.left, region->left);
+        output->rect.top = max(output->rect.top, region->top);
+        output->rect.right = min(output->rect.right, region->right);
+        output->rect.bottom = min(output->rect.bottom, region->bottom);
+    }
+    output->rect.right = max(output->rect.left, output->rect.right);
+    output->rect.bottom = max(output->rect.top, output->rect.bottom);
+    if (FAILED(hr = ID2D1DrawTransform_MapOutputRectToInputRects(transform, &output->rect,
+            count ? requested : NULL, count))) goto done;
+    hr = d2d_custom_effect_render(context, node->render_info, inputs, count, linkable, output);
+done:
+    ID2D1DrawTransform_Release(transform);
+    return hr;
 }
 
 enum d2d_effect_kind
 {
     EFFECT_PASSTHROUGH, EFFECT_GRAPH, EFFECT_ALPHA_MASK, EFFECT_CONVOLVE_MATRIX,
     EFFECT_CONTRAST, EFFECT_EMBOSS, EFFECT_OPACITY,
-    EFFECT_PREMULTIPLY, EFFECT_UNPREMULTIPLY, EFFECT_WHITE_LEVEL,
+    EFFECT_PREMULTIPLY, EFFECT_UNPREMULTIPLY, EFFECT_WHITE_LEVEL, EFFECT_DRAW_TRANSFORM,
 };
 
 struct d2d_evaluation_source
@@ -3186,9 +3227,10 @@ struct d2d_evaluation_source
 struct d2d_evaluation_frame
 {
     struct d2d_effect *effect;
-    struct d2d_effect_image inputs[2];
-    struct d2d_evaluation_source sources[2];
+    struct d2d_effect_image inputs[8];
+    struct d2d_evaluation_source sources[8];
     struct d2d_transform_node *binding;
+    struct d2d_transform_node *draw_node;
     size_t scope;
     enum d2d_effect_kind kind;
     unsigned int count, next;
@@ -3236,7 +3278,8 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
 {
     enum d2d_effect_kind kind;
     struct d2d_evaluation_frame *frames = NULL, *frame;
-    struct d2d_evaluation_source source = {image}, sources[2];
+    struct d2d_evaluation_source source = {image}, sources[8];
+    struct d2d_transform_node *draw_node;
     struct d2d_transform_node *binding;
     struct d2d_effect *effect;
     struct d2d_effect_image result = {0};
@@ -3250,13 +3293,47 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
     if (!image) return E_INVALIDARG;
     for (;;)
     {
+        draw_node = NULL;
         binding = source.node;
         if (binding)
         {
             if (binding->object->lpVtbl != &d2d_effect_node_vtbl)
             {
-                hr = E_NOTIMPL;
-                break;
+                const struct d2d_evaluation_frame *owner = &frames[source.scope];
+                const struct d2d_transform_graph *graph = owner->effect->graph;
+                unsigned int port;
+
+                draw_node = binding;
+                effect = owner->effect;
+                count = binding->input_count;
+                kind = EFFECT_DRAW_TRANSFORM;
+                if (count > ARRAY_SIZE(sources)) {hr = E_NOTIMPL; break;}
+                for (i = 0; i < depth; ++i)
+                    if (frames[i].draw_node == draw_node && frames[i].scope == source.scope) break;
+                if (i != depth) {hr = D2DERR_CYCLIC_GRAPH; break;}
+                if (!count)
+                {
+                    hr = d2d_custom_node_evaluate(context, draw_node, NULL, 0, region,
+                            bounds_only, TRUE, &result);
+                    if (SUCCEEDED(hr)) goto have_result;
+                    break;
+                }
+                for (j = 0; j < count; ++j)
+                {
+                    memset(&sources[j], 0, sizeof(sources[j]));
+                    if (draw_node->inputs[j])
+                    {
+                        sources[j].node = draw_node->inputs[j];
+                        sources[j].scope = source.scope;
+                        continue;
+                    }
+                    port = draw_node->effect_inputs[j];
+                    if (port >= graph->input_count) {hr = D2DERR_INVALID_GRAPH_CONFIGURATION; break;}
+                    if (FAILED(hr = d2d_effect_input_source(effect, owner->binding, owner->scope,
+                            port, frames, &sources[j]))) break;
+                }
+                if (j != count) break;
+                goto push_frame;
             }
             image = &impl_from_effect_node(binding->object)->effect->ID2D1Image_iface;
         }
@@ -3311,7 +3388,8 @@ static HRESULT d2d_effect_evaluate(struct d2d_device_context *context, ID2D1Imag
                             effect->graph->passthrough_input, frames, &sources[0]))) break;
                     goto push_frame;
                 }
-                if (effect->graph->output && effect->graph->output->object->lpVtbl == &d2d_effect_node_vtbl)
+                if (effect->graph->output && (effect->graph->output->object->lpVtbl == &d2d_effect_node_vtbl
+                        || effect->input_count))
                 {
                     kind = EFFECT_GRAPH;
                     sources[0].image = NULL;
@@ -3352,6 +3430,7 @@ push_frame:
             frame->kind = kind;
             frame->count = count;
             frame->binding = binding;
+            frame->draw_node = draw_node;
             frame->scope = source.scope;
             memcpy(frame->sources, sources, count * sizeof(*sources));
             source = sources[0];
@@ -3367,11 +3446,6 @@ push_frame:
             result.rect.left = result.rect.top = 0;
             result.rect.right = size.width;
             result.rect.bottom = size.height;
-        }
-        if (bounds_only)
-        {
-            ID2D1Bitmap_Release(result.bitmap);
-            result.bitmap = NULL;
         }
 have_result:
         for (;;)
@@ -3393,6 +3467,11 @@ have_result:
                         result.bitmap = (ID2D1Bitmap *)&shared->ID2D1Bitmap1_iface;
                     }
                 }
+                if (bounds_only && result.bitmap)
+                {
+                    ID2D1Bitmap_Release(result.bitmap);
+                    result.bitmap = NULL;
+                }
                 *output = result;
                 free(frames);
                 return S_OK;
@@ -3406,7 +3485,16 @@ have_result:
                 break;
             }
             result.rect = frame->inputs[0].rect;
-            if (frame->kind == EFFECT_ALPHA_MASK)
+            if (frame->kind == EFFECT_DRAW_TRANSFORM)
+            {
+                BOOL linkable = TRUE;
+                for (i = 0; i + 1 < depth; ++i)
+                    if (frames[i].kind != EFFECT_GRAPH && frames[i].kind != EFFECT_PASSTHROUGH
+                            && frames[i].kind != EFFECT_OPACITY) linkable = FALSE;
+                if (FAILED(hr = d2d_custom_node_evaluate(context, frame->draw_node, frame->inputs,
+                        frame->count, region, bounds_only, linkable, &result))) goto done;
+            }
+            else if (frame->kind == EFFECT_ALPHA_MASK)
             {
                 result.rect.left = max(result.rect.left, frame->inputs[1].rect.left);
                 result.rect.top = max(result.rect.top, frame->inputs[1].rect.top);
@@ -3813,10 +3901,14 @@ static HRESULT STDMETHODCALLTYPE d2d_draw_info_SetInputDescription(ID2D1DrawInfo
 {
     struct d2d_render_info *info = impl_from_ID2D1DrawInfo(iface);
 
+    TRACE("iface %p, index %u, filter %#x, level count %u.\n", iface, index,
+            description.filter, description.levelOfDetailCount);
     if (index >= info->input_count) return E_INVALIDARG;
-    FIXME("iface %p, index %u stub.\n", iface, index);
-
-    return E_NOTIMPL;
+    if (index >= ARRAY_SIZE(info->input_descriptions)) return E_NOTIMPL;
+    if ((description.filter & ~0x15) && description.filter != D2D1_FILTER_ANISOTROPIC)
+        return E_INVALIDARG;
+    info->input_descriptions[index] = description;
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_draw_info_SetOutputBuffer(ID2D1DrawInfo *iface,
@@ -3937,6 +4029,7 @@ static const ID2D1DrawInfoVtbl d2d_draw_info_vtbl =
 static HRESULT d2d_effect_render_info_create(struct d2d_device *device, struct d2d_render_info **obj)
 {
     struct d2d_render_info *object;
+    unsigned int i;
 
     if (!(object = calloc(1, sizeof(*object))))
         return E_OUTOFMEMORY;
@@ -3944,6 +4037,8 @@ static HRESULT d2d_effect_render_info_create(struct d2d_device *device, struct d
     object->ID2D1DrawInfo_iface.lpVtbl = &d2d_draw_info_vtbl;
     object->refcount = 1;
     object->device = device;
+    for (i = 0; i < ARRAY_SIZE(object->input_descriptions); ++i)
+        object->input_descriptions[i].filter = D2D1_FILTER_MIN_MAG_MIP_LINEAR;
     ID2D1Device6_AddRef(&device->ID2D1Device6_iface);
 
     *obj = object;

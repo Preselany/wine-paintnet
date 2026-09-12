@@ -489,3 +489,19 @@ both outputs, reconnection, graph reset, and removal of an unrelated branch.
 A separate native behavior remains unresolved: removing an already realized
 upstream node leaves its connection usable on Windows. Wine drops that
 connection. The regression records this explicitly with two todo checks.
+
+## Custom draw transforms with image inputs
+
+Custom pixel shaders now receive image textures, per-input samplers, and
+Direct2D TEXCOORD semantics, including scene-offset sampling. DrawInfo stores
+validated input descriptions. The graph evaluator resolves custom transform
+inputs and wrapped effect nodes without modifying the wrapped effect's inputs.
+Rendering stays on Direct3D and restores the caller's graphics state.
+
+Native coverage currently measures one image input, point and linear sampling,
+crop/offset, 96/192 DPI, output precision, and channel-depth combinations.
+The renderer has eight input slots, but general multi-input shaders still need
+separate native validation. More than one requested mip level remains
+unimplemented; MapOutputRectToInputRects requests do not yet drive upstream
+realization. Unbounded or expanded input regions and sampler caching remain
+work to do. The source-only shader regression still passes.

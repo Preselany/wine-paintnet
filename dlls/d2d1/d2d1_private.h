@@ -870,6 +870,7 @@ struct d2d_render_info
     BOOL cached;
     UINT32 instruction_count;
     UINT32 input_count;
+    D2D1_INPUT_DESCRIPTION input_descriptions[8];
 };
 
 struct d2d_transform_node
@@ -958,7 +959,8 @@ HRESULT d2d_effect_resolve_image(struct d2d_device_context *context, ID2D1Image 
 HRESULT d2d_effect_resolve_image_region(struct d2d_device_context *context, ID2D1Image *image,
         const D2D1_RECT_L *region, struct d2d_effect_image *output);
 HRESULT d2d_custom_effect_render(struct d2d_device_context *context, struct d2d_render_info *info,
-        BOOL linkable_output, struct d2d_effect_image *output);
+        const struct d2d_effect_image *inputs, UINT input_count, BOOL linkable_output,
+        struct d2d_effect_image *output);
 HRESULT d2d_effect_get_image_bounds(struct d2d_device_context *context, ID2D1Image *image, D2D1_RECT_F *bounds);
 HRESULT d2d_effect_draw_image(struct d2d_device_context *context, ID2D1Image *image,
         const D2D1_RECT_F *image_rect);
