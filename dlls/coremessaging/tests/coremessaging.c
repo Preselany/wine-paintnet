@@ -133,6 +133,7 @@ struct dispatcher_queue_handler
     LONG ref;
 
     HANDLE event;
+    HANDLE entered;
 };
 
 static struct dispatcher_queue_handler *impl_from_IDispatcherQueueHandler( IDispatcherQueueHandler *iface )
@@ -170,6 +171,7 @@ static ULONG WINAPI dispatcher_queue_handler_Release( IDispatcherQueueHandler *i
     if (!ref)
     {
         CloseHandle( handler->event );
+        CloseHandle( handler->entered );
         free( handler );
     }
 
@@ -181,6 +183,7 @@ static HRESULT WINAPI dispatcher_queue_handler_Invoke( IDispatcherQueueHandler *
     struct dispatcher_queue_handler *handler = impl_from_IDispatcherQueueHandler( iface );
     DWORD ret;
 
+    SetEvent( handler->entered );
     ret = WaitForSingleObject( handler->event, 5000 );
     ok( !ret, "Unexpected wait result %lu.\n", ret );
 
@@ -206,6 +209,7 @@ static HRESULT create_dispatcher_queue_handler( IDispatcherQueueHandler **handle
     impl->IDispatcherQueueHandler_iface.lpVtbl = &dispatcher_queue_handler_vtbl;
     impl->ref = 1;
     impl->event = CreateEventW( NULL, TRUE, FALSE, NULL );
+    impl->entered = CreateEventW( NULL, TRUE, FALSE, NULL );
 
     *handler = &impl->IDispatcherQueueHandler_iface;
     return S_OK;
@@ -474,6 +478,10 @@ static void test_DispatcherQueueController_Statics(void)
     hr = IDispatcherQueue_TryEnqueue( dispatcher_queue, handler_iface, &result );
     ok( hr == S_OK, "got hr %#lx.\n", hr );
     ok( result == TRUE, "got result %d.\n", result );
+
+    /* The observable queue reference count does not change while dispatching. */
+    ret = WaitForSingleObject( queue_handler->entered, 5000 );
+    ok( ret == WAIT_OBJECT_0, "Callback did not start, wait result %lu.\n", ret );
 
     hr = IDispatcherQueue_QueryInterface( dispatcher_queue, &IID_IDispatcherQueue2, (void **)&dispatcher_queue2 );
     ok( hr == S_OK || broken(hr == E_NOINTERFACE) /* w1064v1809 */, "got hr %#lx.\n", hr );

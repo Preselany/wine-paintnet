@@ -494,11 +494,12 @@ static void queue_finish( struct dispatcher_queue *queue, HRESULT hr )
 
 static void queue_dispatch( struct dispatcher_queue *queue )
 {
+    struct dispatcher_queue_controller *controller = queue->controller;
     struct queue_callback *callback = NULL, *candidate;
     struct shutdown_args *args;
     HRESULT hr;
 
-    IDispatcherQueue_AddRef( &queue->IDispatcherQueue_iface );
+    IDispatcherQueueController_AddRef( &controller->IDispatcherQueueController_iface );
     EnterCriticalSection( &queue->cs );
     queue->posted = FALSE;
     if (queue->dispatching || queue->state == QUEUE_STOPPED) goto done;
@@ -553,7 +554,7 @@ static void queue_dispatch( struct dispatcher_queue *queue )
             || (queue->state == QUEUE_STARTING && !queue->deferrals))) queue_wake( queue );
  done:
     LeaveCriticalSection( &queue->cs );
-    IDispatcherQueue_Release( &queue->IDispatcherQueue_iface );
+    IDispatcherQueueController_Release( &controller->IDispatcherQueueController_iface );
 }
 
 static LRESULT CALLBACK queue_window_proc( HWND window, UINT message, WPARAM wparam, LPARAM lparam )
