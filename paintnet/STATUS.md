@@ -9,7 +9,8 @@ managed renderer does not count toward this project's compatibility status.
 ## Current state — September 12, 2026
 
 The original application reaches the editor in the private Wine test display.
-A brush stroke, undo, and redo have now been verified through the actual editor.
+A brush stroke, undo, redo, and a PNG save/close/reopen/save-copy workflow have
+now been verified through the actual editor.
 It is still not ready for normal use. All 312 original runtime binaries remain
 unchanged, and these runs use Wine's builtin Direct2D implementation.
 
@@ -29,9 +30,22 @@ transformed, and overlapping rectangle combinations now reach the existing
 boolean geometry implementation. Rounded-rectangle simplification also places
 its corners correctly.
 
-Save As opens and reaches PNG encoding. The preview fails in
-`WICMetadataBlockWriter.AddWriter`, called by `PngExifEncoder.CommitExifPropertyItems`.
-No successful saved image or reopen has been verified yet.
+The local PNG metadata serializer and default pixel-format color contexts now
+allow the PNG preview, save, and reload to finish. The test drew a brush stroke,
+saved `brush-first.png`, closed the document, reopened the saved file, and saved
+`brush-roundtrip.png`. Both 800-by-600 images decode to exactly the same 480,000
+RGBA pixels, including 742 nonwhite pixels. All PNG chunk CRCs are valid and the
+files contain the expected EXIF chunk. This proves one PNG editing workflow;
+other file formats and more complex documents still need validation.
+
+Default color contexts use the installed sRGB profile for the integer RGB,
+gray, indexed, and supported component formats observed on Windows. Float,
+half-float, and other unsupported formats return the native error. Windows
+caches a separate mutable context per pixel format, which the implementation
+now follows. CMYK needs the installed `RSWOP.icm` profile, which Wine does not
+currently distribute. Many additional pixel-format registrations also remain
+missing. PNG metadata serialization is still local work awaiting its focused
+regressions and remaining block-writer implementation.
 
 Toolbar labels still render incorrectly. Gaussian Blur, glyph replay, layer
 mask edges, and other local rendering prototypes have measured Windows
@@ -44,8 +58,8 @@ sampling differences remain; they are not presented as finished rendering work.
 These runs include command-list rasterization, Color Management, and gradient
 rendering work. ICC conversion and primitive antialiasing/strokes still have
 measured differences. Gradient gamma-1 quantization and radial-clamp sampling
-also need refinement. Editing, save/reopen, native Linux dialogs, and hardware
-performance remain unverified.
+also need refinement. Broader editing, native Linux dialogs, and hardware performance remain
+unverified.
 
 ## Verified baseline — September 11, 2026
 
@@ -785,3 +799,43 @@ The editor test then draws a diagonal brush stroke, removes it with Undo, and
 restores it with Redo. The subsequent PNG save attempt identifies the missing
 metadata block writer above. Toolbar text rendering, full editing coverage,
 native Linux file dialogs, and hardware performance remain unfinished.
+
+## PNG metadata prototype — September 12
+
+Local, uncommitted code implements raw unknown-metadata serialization and
+passes the resulting ancillary chunks to libpng, which writes their lengths
+and checksums. Native jobs 159–160 validate when metadata enters the file,
+raw payload bytes, and empty versus malformed short metadata. The test PNGs
+decode to the same pixels, and all emitted chunk checksums validate. Windows
+also synthesizes sRGB/gAMA blocks, which the prototype does not yet provide.
+Block enumeration/query methods, error-state behavior, and broader regression
+coverage remain unfinished; this is not a complete PNG metadata implementation.
+
+The actual editor now reaches `PngFileType.OnLoad` while generating the PNG
+preview, where default pixel-format color context lookup remains unimplemented.
+Native job 161 confirms that ordinary integer RGB, gray, and indexed formats
+return an ICC color context, while the tested float/half and alpha-only formats
+report unsupported operation. The implementation must preserve these semantics.
+
+## Default pixel-format color contexts — September 12
+
+Native probes covered all 90 pixel-format GUIDs in Wine's current WIC headers:
+46 formats return an ICC profile, 39 reject default-context queries, and five
+have no registered component. The successful group contains 38 sRGB formats
+and eight CMYK formats. Unsupported queries leave the caller's output pointer
+unchanged, and null output arguments return `E_INVALIDARG`.
+
+`PixelFormatInfo_GetColorContext` now loads the installed default profile and
+caches a referenced context per format under a lock. Separate formats retain
+separate contexts. A native mutation probe confirmed that replacing a context's
+profile bytes is allowed, while changing that initialized object to an EXIF
+context is rejected. Repeated calls must return the same object. The regression
+compares the complete returned ICC bytes with the installed operating-system
+profile instead of requiring Wine's sRGB profile to be byte-identical to the
+Windows-distributed profile.
+
+The final focused test executes 842 checks on Windows with no failures or TODOs.
+Wine reports 427 checks plus eight silenced TODOs, with no ordinary failures:
+50 expected failures cover existing absent pixel-format registrations and two
+cover the absent RSWOP CMYK profile. The profile source is not substituted with
+an unrelated CMYK profile. These gaps remain compatibility work.

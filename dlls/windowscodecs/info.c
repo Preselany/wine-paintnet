@@ -25,6 +25,7 @@
 #include "winbase.h"
 #include "winreg.h"
 #include "objbase.h"
+#include "icm.h"
 
 #include "wincodecs_private.h"
 
@@ -1174,6 +1175,8 @@ static HRESULT FormatConverterInfo_Constructor(HKEY classkey, REFCLSID clsid, Co
 
 typedef struct {
     ComponentInfo base;
+    IWICColorContext *color_context;
+    SRWLOCK color_context_lock;
 } PixelFormatInfo;
 
 static inline PixelFormatInfo *impl_from_IWICPixelFormatInfo2(IWICPixelFormatInfo2 *iface)
@@ -1225,6 +1228,7 @@ static ULONG WINAPI PixelFormatInfo_Release(IWICPixelFormatInfo2 *iface)
 
     if (ref == 0)
     {
+        if (This->color_context) IWICColorContext_Release(This->color_context);
         component_info_cleanup(&This->base);
         free(This);
     }
@@ -1331,11 +1335,111 @@ static HRESULT WINAPI PixelFormatInfo_GetFormatGUID(IWICPixelFormatInfo2 *iface,
     return S_OK;
 }
 
-static HRESULT WINAPI PixelFormatInfo_GetColorContext(IWICPixelFormatInfo2 *iface,
-    IWICColorContext **ppIColorContext)
+static HRESULT create_pixel_format_color_context(REFGUID format, IWICColorContext **context)
 {
-    FIXME("(%p,%p): stub\n", iface, ppIColorContext);
-    return E_NOTIMPL;
+    static const GUID * const srgb_formats[] =
+    {
+        &GUID_WICPixelFormat1bppIndexed,
+        &GUID_WICPixelFormat2bppIndexed,
+        &GUID_WICPixelFormat4bppIndexed,
+        &GUID_WICPixelFormat8bppIndexed,
+        &GUID_WICPixelFormatBlackWhite,
+        &GUID_WICPixelFormat2bppGray,
+        &GUID_WICPixelFormat4bppGray,
+        &GUID_WICPixelFormat8bppGray,
+        &GUID_WICPixelFormat16bppGray,
+        &GUID_WICPixelFormat16bppBGR555,
+        &GUID_WICPixelFormat16bppBGR565,
+        &GUID_WICPixelFormat16bppBGRA5551,
+        &GUID_WICPixelFormat24bppBGR,
+        &GUID_WICPixelFormat24bppRGB,
+        &GUID_WICPixelFormat32bppBGR,
+        &GUID_WICPixelFormat32bppBGRA,
+        &GUID_WICPixelFormat32bppPBGRA,
+        &GUID_WICPixelFormat32bppRGB,
+        &GUID_WICPixelFormat32bppRGBA,
+        &GUID_WICPixelFormat32bppPRGBA,
+        &GUID_WICPixelFormat48bppRGB,
+        &GUID_WICPixelFormat48bppBGR,
+        &GUID_WICPixelFormat64bppRGB,
+        &GUID_WICPixelFormat64bppRGBA,
+        &GUID_WICPixelFormat64bppBGRA,
+        &GUID_WICPixelFormat64bppPRGBA,
+        &GUID_WICPixelFormat64bppPBGRA,
+        &GUID_WICPixelFormat32bppBGR101010,
+        &GUID_WICPixelFormat32bppRGBA1010102,
+        &GUID_WICPixelFormat32bppR10G10B10A2HDR10,
+        &GUID_WICPixelFormat24bpp3Channels,
+        &GUID_WICPixelFormat48bpp3Channels,
+        &GUID_WICPixelFormat32bpp3ChannelsAlpha,
+        &GUID_WICPixelFormat64bpp3ChannelsAlpha,
+        &GUID_WICPixelFormat8bppY,
+        &GUID_WICPixelFormat8bppCb,
+        &GUID_WICPixelFormat8bppCr,
+        &GUID_WICPixelFormat16bppCbCr,
+    };
+    static const GUID * const cmyk_formats[] =
+    {
+        &GUID_WICPixelFormat32bppCMYK,
+        &GUID_WICPixelFormat64bppCMYK,
+        &GUID_WICPixelFormat32bpp4Channels,
+        &GUID_WICPixelFormat64bpp4Channels,
+        &GUID_WICPixelFormat40bppCMYKAlpha,
+        &GUID_WICPixelFormat80bppCMYKAlpha,
+        &GUID_WICPixelFormat40bpp4ChannelsAlpha,
+        &GUID_WICPixelFormat80bpp4ChannelsAlpha,
+    };
+    IWICColorContext *result;
+    WCHAR filename[MAX_PATH];
+    DWORD size = sizeof(filename);
+    unsigned int i;
+    HRESULT hr;
+    BOOL srgb = FALSE, cmyk = FALSE;
+
+    for (i = 0; i < ARRAY_SIZE(srgb_formats); ++i)
+        if (IsEqualGUID(format, srgb_formats[i])) {srgb = TRUE; break;}
+    for (i = 0; i < ARRAY_SIZE(cmyk_formats); ++i)
+        if (IsEqualGUID(format, cmyk_formats[i])) {cmyk = TRUE; break;}
+    if (!srgb && !cmyk) return WINCODEC_ERR_UNSUPPORTEDOPERATION;
+
+    if (srgb)
+    {
+        if (!GetStandardColorSpaceProfileW(NULL, LCS_sRGB, filename, &size))
+            return HRESULT_FROM_WIN32(GetLastError());
+    }
+    else
+    {
+        if (!GetColorDirectoryW(NULL, filename, &size)) return HRESULT_FROM_WIN32(GetLastError());
+        if (lstrlenW(filename) + ARRAY_SIZE(L"\\RSWOP.icm") > ARRAY_SIZE(filename))
+            return HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER);
+        lstrcatW(filename, L"\\RSWOP.icm");
+    }
+    if (FAILED(hr = ColorContext_Create(&result))) return hr;
+    hr = IWICColorContext_InitializeFromFilename(result, filename);
+    if (FAILED(hr)) IWICColorContext_Release(result);
+    else *context = result;
+    return hr;
+}
+
+static HRESULT WINAPI PixelFormatInfo_GetColorContext(IWICPixelFormatInfo2 *iface,
+        IWICColorContext **context)
+{
+    PixelFormatInfo *info = impl_from_IWICPixelFormatInfo2(iface);
+    HRESULT hr = S_OK;
+
+    TRACE("iface %p, context %p.\n", iface, context);
+    if (!context) return E_INVALIDARG;
+
+    AcquireSRWLockExclusive(&info->color_context_lock);
+    if (!info->color_context)
+        hr = create_pixel_format_color_context(&info->base.clsid, &info->color_context);
+    if (SUCCEEDED(hr))
+    {
+        *context = info->color_context;
+        IWICColorContext_AddRef(*context);
+    }
+    ReleaseSRWLockExclusive(&info->color_context_lock);
+    return hr;
 }
 
 static HRESULT WINAPI PixelFormatInfo_GetBitsPerPixel(IWICPixelFormatInfo2 *iface,
@@ -1448,6 +1552,8 @@ static HRESULT PixelFormatInfo_Constructor(HKEY classkey, REFCLSID clsid, Compon
         return E_OUTOFMEMORY;
 
     component_info_init(&This->base, classkey, clsid, (const IWICComponentInfoVtbl *)&PixelFormatInfo_Vtbl);
+    This->color_context = NULL;
+    InitializeSRWLock(&This->color_context_lock);
 
     *ret = &This->base;
     return S_OK;
