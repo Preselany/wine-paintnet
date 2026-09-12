@@ -1324,3 +1324,27 @@ Evidence: `work/classic/logs/paintnet-20260912-132439-633105.log` and
 `work/classic/validation/glyph-clip-roundtrip-report.json`. This validates one
 normal text workflow after the memory fix; it does not replace the extreme
 coordinate regression or establish complete text compatibility.
+
+## Device-context format support, September 12, 2026
+
+- `188-format-support` measured all 192 formats on native Windows WARP at
+  feature levels 9.1, 9.3, 10.0, 10.1, 11.0 and 12.1. Each reports the same
+  15 supported formats; several support inputs without supporting targets.
+- The first pixel oracle incorrectly treated BGRX as a valid render target
+  (`189-format-support-focused`, two failures). The corrected test draws a
+  BGRX source into BGRA; `190-format-support-pixels` passes 793 checks with
+  no TODOs, failures or skips on Windows.
+- Wine before the query fix: 791 checks, 18 ordinary failures, 12 TODOs.
+  The final hardware test has 793 checks, 12 TODOs and no ordinary failures,
+  flaky checks or skips. The software run also passes; related feature-level,
+  bitmap-source and WIC-target tests have no ordinary failures.
+- `gpu-invert-report.json`: all 480,000 RGBA pixels exactly match RGB inversion
+  of `glyph-clip-roundtrip.png`, preserving alpha. The saved PNG SHA-256 is
+  `36f0fee8fbfd748c17b66f4735093a594295b80adf013c1693714d35e4982c72`.
+- Actual NVIDIA effect rendering works with UI acceleration disabled. Enabling
+  the accelerated canvas with the new query exposes a separate EndDraw
+  E_NOTIMPL startup failure (pdncrash.78), which remains under investigation.
+- The full current working-tree focused suite passes 56 summaries: 601,196
+  reported checks plus 136 silenced TODO checks, 435 total TODOs, and no ordinary
+  failures, flaky checks or skips. This includes the separately uncommitted WIC
+  lock and layer prototypes.

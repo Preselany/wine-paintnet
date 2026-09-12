@@ -2415,9 +2415,32 @@ static HRESULT STDMETHODCALLTYPE d2d_device_context_CreateCommandList(ID2D1Devic
 
 static BOOL STDMETHODCALLTYPE d2d_device_context_IsDxgiFormatSupported(ID2D1DeviceContext6 *iface, DXGI_FORMAT format)
 {
-    FIXME("iface %p, format %#x stub!\n", iface, format);
+    struct d2d_device_context *context = impl_from_ID2D1DeviceContext(iface);
+    const UINT required = D3D11_FORMAT_SUPPORT_TEXTURE2D | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE;
+    UINT support = 0;
 
-    return FALSE;
+    TRACE("iface %p, format %#x.\n", iface, format);
+
+    /* Restrict this to formats supported by our bitmap rendering path. Direct3D
+     * also supports integer, typeless, depth and other non-Direct2D formats. */
+    switch (format)
+    {
+        case DXGI_FORMAT_R32G32B32A32_FLOAT:
+        case DXGI_FORMAT_R16G16B16A16_FLOAT:
+        case DXGI_FORMAT_R16G16B16A16_UNORM:
+        case DXGI_FORMAT_R8G8B8A8_UNORM:
+        case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+        case DXGI_FORMAT_A8_UNORM:
+        case DXGI_FORMAT_B8G8R8A8_UNORM:
+        case DXGI_FORMAT_B8G8R8X8_UNORM:
+        case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+            break;
+        default:
+            return FALSE;
+    }
+
+    return SUCCEEDED(ID3D11Device1_CheckFormatSupport(context->d3d_device, format, &support))
+            && (support & required) == required;
 }
 
 static BOOL STDMETHODCALLTYPE d2d_device_context_IsBufferPrecisionSupported(ID2D1DeviceContext6 *iface,

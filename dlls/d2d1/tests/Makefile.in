@@ -21,6 +21,7 @@ SOURCES = \
 	draw_input.c \
 	effect_context.c \
 	feature_level.c \
+	format_support.c \
 	ellipse_widen.c \
 	invert.c \
 	offset_transform.c \

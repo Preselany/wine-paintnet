@@ -1064,3 +1064,26 @@ hardware performance still require validation. The default build and documented
 installation now include DirectWrite and Windows Codecs, whose fixes are needed
 by the app. This corrects omitted modules, not the remaining packaging and
 rendering work required for a fully reproducible supported release.
+
+## Pixel-format capability reporting and GPU selection
+
+`ID2D1DeviceContext::IsDxgiFormatSupported` now reports the nine implemented
+bitmap formats, intersected with the Direct3D texture/sampling capabilities.
+Previously its unconditional false result made Paint.NET's hardware capability
+check fail and selected CPU rendering by default. The six additional formats
+measured on Windows (10-bit RGBA, R8/RG8 image-source formats, and BC1/2/3) remain
+unreported until their corresponding paths are implemented.
+
+The regression checks 192 format values plus invalid enums at feature levels
+10.0 and 11.0, renders and reads back eight target formats, and verifies BGRX
+as a source image. Native Windows passes all 793 checks. Wine passes with 12
+expected TODOs for the six remaining formats and no ordinary failures on either
+the NVIDIA GTX 1050 or llvmpipe.
+
+Selecting the NVIDIA rendering device in the unchanged app allows Invert Colors
+to complete. Its PNG export exactly matches the expected inverted RGB and
+unchanged alpha for all 480,000 pixels of the 800x600 fixture. This test used
+software UI/canvas rendering and GPU effect rendering. Enabling the accelerated
+canvas after the query fix reaches an additional E_NOTIMPL failure in EndDraw
+(pdncrash.78); accelerated startup, JPEG, long sessions and optimization remain
+incomplete. The CPU/WIC effect path also still has the null-DXGI-device failure.
