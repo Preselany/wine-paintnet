@@ -22,4 +22,5 @@ SOURCES = \
 	gradient_stops.c \
 	histogram.c \
 	white_level.c \
+	widen.c \
 	opacity_metadata.c

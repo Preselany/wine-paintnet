@@ -825,3 +825,19 @@ on Widen(strokeWidth=2, strokeStyle=NULL). All original runtime binaries pass
 the integrity check.
 
 The complete focused suite then passed 25 test cases and 147,321 checks, with six recorded todo failures and no ordinary failures (contained-full-focused.log).
+
+## Default-stroke widening — September 12, 2026
+
+Native Windows/WARP job 076 runs the focused `widen` regression: 340 checks,
+zero failures. The Wine/DXVK llvmpipe run executes 322 checks with five expected
+TODO failures and zero ordinary failures. Raw probes 074 and 075 measure
+rectangles, concave contours, ellipses, and the actual seven-point Paint.NET
+color-control contour at four widths and two transforms. All eight rectangle
+cases match native bounds, area, and pixels. The eight actual contour cases
+match bounds, with at most one ULP of area accumulation difference; three
+cases differ at 1–3 aliased edge pixels. Ellipse Widen remains unimplemented.
+
+The unchanged application advances past Widen and, with the local path-combination
+prototype, past its geometry union. Run `paintnet-20260912-051834-391715.log`
+fails at CompositorController activation; `pdncrash.38.log` records
+CLASS_E_CLASSNOTAVAILABLE. This is not successful editor startup.

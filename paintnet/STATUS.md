@@ -11,8 +11,10 @@ managed renderer does not count toward this project's compatibility status.
 The editor is not yet usable. The local working tree passes color-icon rendering,
 window creation, the busy-spinner animation, zoom-slider gradient setup,
 WhiteLevelAdjustment, custom image shaders, document-thumbnail rendering, and
-a contained geometry subtraction in ColorRectangleControl. Startup now fails
-at ID2D1Geometry::Widen with a two-pixel stroke and the default stroke style.
+a contained geometry subtraction in ColorRectangleControl. Default-stroke widening
+and a local path-combination implementation now also pass that control. Startup
+currently fails activating Windows.UI.Composition.Core.CompositorController
+(CLASS_E_CLASSNOTAVAILABLE). The editor remains unusable.
 
 Command-list DrawImage replay and source-copy compositing are local prototypes.
 Their 96-DPI image cases largely match Windows, but higher-DPI and fractional
@@ -521,3 +523,17 @@ Cases requiring edge intersections and winding-filled subtraction remain
 unimplemented. Curve flattening still differs from Windows in three measured
 area cases, although the sampled aliased pixels match. Paint.NET advances
 from CombineWithGeometry to its next missing Widen call.
+
+## Default-stroke geometry widening
+
+Rectangle widening emits the expanded outer and inset inner contours, including
+solid coverage when the stroke consumes the interior. Closed path widening
+constructs opposite miter-offset contours and applies the supplied transform
+after expansion, matching Windows stroke scaling. Unsupported open contours,
+custom stroke styles, collapsed offsets, and complex self-intersections still
+return E_NOTIMPL. Ellipse widening is not implemented.
+
+The focused regression compares native bounds, areas, and aliased pixels for
+24 rectangle, concave-path, and actual Paint.NET color-control cases. Five known
+Wine failures remain: two wide concave strokes and three cases with 1–3 sloping
+edge pixels differing from Windows. No application files were modified.

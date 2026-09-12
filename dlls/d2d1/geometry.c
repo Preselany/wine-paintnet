@@ -4452,14 +4452,138 @@ static HRESULT STDMETHODCALLTYPE d2d_path_geometry_ComputePointAtLength(ID2D1Pat
     return E_NOTIMPL;
 }
 
+struct d2d_widened_figure
+{
+    D2D1_POINT_2F *points;
+    size_t count;
+};
+
+static double d2d_widen_cross(D2D1_POINT_2F a, D2D1_POINT_2F b, D2D1_POINT_2F c)
+{
+    return ((double)b.x - a.x) * ((double)c.y - a.y) - ((double)b.y - a.y) * ((double)c.x - a.x);
+}
+
+static BOOL d2d_widen_contour_crosses(const D2D1_POINT_2F *p, size_t count)
+{
+    size_t i, j;
+    for (i = 0; i < count; ++i)
+        for (j = i + 2; j < count; ++j)
+        {
+            D2D1_POINT_2F a = p[i], b = p[(i + 1) % count], c = p[j], d = p[(j + 1) % count];
+            double ab_c, ab_d, cd_a, cd_b;
+            if (!i && j + 1 == count) continue;
+            ab_c = d2d_widen_cross(a, b, c); ab_d = d2d_widen_cross(a, b, d);
+            cd_a = d2d_widen_cross(c, d, a); cd_b = d2d_widen_cross(c, d, b);
+            if (((ab_c > 0 && ab_d < 0) || (ab_c < 0 && ab_d > 0))
+                    && ((cd_a > 0 && cd_b < 0) || (cd_a < 0 && cd_b > 0))) return TRUE;
+        }
+    return FALSE;
+}
+
+/* Default miter strokes on closed contours. Offset contours are built before
+ * touching the caller's sink so unsupported topology cannot leave a partial path. */
+static HRESULT d2d_path_widen_closed(ID2D1Geometry *source, float width, ID2D1StrokeStyle *style,
+        const D2D1_MATRIX_3X2_F *transform, float tolerance, ID2D1SimplifiedGeometrySink *sink)
+{
+    struct d2d_widened_figure *figures = NULL;
+    ID2D1PathGeometry *path;
+    struct d2d_geometry *geometry;
+    size_t i, j, side, count;
+    float half = width * .5f;
+    HRESULT hr;
+
+    if (!sink || !isfinite(width) || width < 0) return E_INVALIDARG;
+    if (style) return E_NOTIMPL;
+    if (!width) return S_OK;
+    /* Native applies the transform to the widened outline, including its width. */
+    if (FAILED(hr = d2d_geometry_get_simplified(source, NULL, tolerance, &path))) return hr;
+    geometry = unsafe_impl_from_ID2D1Geometry((ID2D1Geometry *)path);
+    if (geometry->u.path.figure_count
+            && !(figures = calloc(geometry->u.path.figure_count, sizeof(*figures))))
+    { hr = E_OUTOFMEMORY; goto done; }
+    for (i = 0; i < geometry->u.path.figure_count; ++i)
+    {
+        const struct d2d_figure *f = &geometry->u.path.figures[i];
+        D2D1_POINT_2F *vertices, *left, *right;
+        if (!(f->flags & D2D_FIGURE_FLAG_CLOSED)) {hr = E_NOTIMPL; goto done;}
+        if (!(figures[i].points = malloc(f->vertex_count * 3 * sizeof(*vertices))))
+        { hr = E_OUTOFMEMORY; goto done; }
+        vertices = figures[i].points;
+        count = 0;
+        for (j = 0; j < f->vertex_count; ++j)
+        {
+            D2D1_POINT_2F p = f->vertices[j];
+            if (f->vertex_types[j] == D2D_VERTEX_TYPE_NONE) continue;
+            if (count && vertices[count - 1].x == p.x && vertices[count - 1].y == p.y) continue;
+            vertices[count++] = p;
+        }
+        if (count > 1 && vertices[count - 1].x == vertices[0].x && vertices[count - 1].y == vertices[0].y) --count;
+        if (count < 3 || d2d_widen_contour_crosses(vertices, count)) {hr = E_NOTIMPL; goto done;}
+        figures[i].count = count;
+        left = vertices + count; right = left + count;
+        for (j = 0; j < count; ++j)
+        {
+            D2D1_POINT_2F p = vertices[j], prev = vertices[(j + count - 1) % count], next = vertices[(j + 1) % count];
+            double ax = p.x - prev.x, ay = p.y - prev.y, bx = next.x - p.x, by = next.y - p.y;
+            double alen = hypot(ax, ay), blen = hypot(bx, by), denominator, dx, dy;
+            ax /= alen; ay /= alen; bx /= blen; by /= blen;
+            denominator = 1 + ax * bx + ay * by;
+            if (denominator <= 0) {hr = E_NOTIMPL; goto done;}
+            dx = (-ay - by) / denominator; dy = (ax + bx) / denominator;
+            if (dx * dx + dy * dy > 100) {hr = E_NOTIMPL; goto done;}
+            left[j] = (D2D1_POINT_2F){p.x + half * dx, p.y + half * dy};
+            right[j] = (D2D1_POINT_2F){p.x - half * dx, p.y - half * dy};
+        }
+        for (side = 0; side < 2; ++side)
+        {
+            const D2D1_POINT_2F *offset = side ? right : left;
+            if (d2d_widen_contour_crosses(offset, count)) {hr = E_NOTIMPL; goto done;}
+            for (j = 0; j < count; ++j)
+            {
+                size_t next = (j + 1) % count;
+                double dot = ((double)offset[next].x - offset[j].x) * (vertices[next].x - vertices[j].x)
+                        + ((double)offset[next].y - offset[j].y) * (vertices[next].y - vertices[j].y);
+                if (dot <= 0) {hr = E_NOTIMPL; goto done;}
+            }
+        }
+    }
+    ID2D1SimplifiedGeometrySink_SetFillMode(sink, D2D1_FILL_MODE_WINDING);
+    ID2D1SimplifiedGeometrySink_SetSegmentFlags(sink, D2D1_PATH_SEGMENT_NONE);
+    for (i = 0; i < geometry->u.path.figure_count; ++i)
+    {
+        count = figures[i].count;
+        for (side = 0; side < 2; ++side)
+        {
+            const D2D1_POINT_2F *points = figures[i].points + count * (side + 1);
+            for (j = 0; j < count; ++j)
+            {
+                D2D1_POINT_2F p = points[side ? count - 1 - j : j];
+                if (transform) d2d_point_transform(&p, transform, p.x, p.y);
+                if (!j) ID2D1SimplifiedGeometrySink_BeginFigure(sink, p, D2D1_FIGURE_BEGIN_FILLED);
+                else ID2D1SimplifiedGeometrySink_AddLines(sink, &p, 1);
+            }
+            ID2D1SimplifiedGeometrySink_EndFigure(sink, D2D1_FIGURE_END_CLOSED);
+        }
+    }
+    hr = S_OK;
+done:
+    if (figures)
+    {
+        for (i = 0; i < geometry->u.path.figure_count; ++i) free(figures[i].points);
+        free(figures);
+    }
+    ID2D1PathGeometry_Release(path);
+    return hr;
+}
+
 static HRESULT STDMETHODCALLTYPE d2d_path_geometry_Widen(ID2D1PathGeometry1 *iface, float stroke_width,
         ID2D1StrokeStyle *stroke_style, const D2D1_MATRIX_3X2_F *transform, float tolerance,
         ID2D1SimplifiedGeometrySink *sink)
 {
-    FIXME("iface %p, stroke_width %.8e, stroke_style %p, transform %p, tolerance %.8e, sink %p stub!\n",
+    TRACE("iface %p, stroke_width %.8e, stroke_style %p, transform %p, tolerance %.8e, sink %p\n",
             iface, stroke_width, stroke_style, transform, tolerance, sink);
 
-    return E_NOTIMPL;
+    return d2d_path_widen_closed((ID2D1Geometry *)iface, stroke_width, stroke_style, transform, tolerance, sink);
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_path_geometry_Open(ID2D1PathGeometry1 *iface, ID2D1GeometrySink **sink)
@@ -5510,10 +5634,34 @@ static HRESULT STDMETHODCALLTYPE d2d_rectangle_geometry_Widen(ID2D1RectangleGeom
         ID2D1StrokeStyle *stroke_style, const D2D1_MATRIX_3X2_F *transform, float tolerance,
         ID2D1SimplifiedGeometrySink *sink)
 {
-    FIXME("iface %p, stroke_width %.8e, stroke_style %p, transform %p, tolerance %.8e, sink %p stub!\n",
-            iface, stroke_width, stroke_style, transform, tolerance, sink);
+    struct d2d_geometry *geometry = impl_from_ID2D1RectangleGeometry(iface);
+    const D2D1_RECT_F *r = &geometry->u.rectangle.rect;
+    D2D1_POINT_2F points[4];
+    float half = stroke_width * .5f;
+    unsigned int side, i;
 
-    return E_NOTIMPL;
+    TRACE("iface %p, stroke_width %.8e, stroke_style %p, transform %p, tolerance %.8e, sink %p.\n",
+            iface, stroke_width, stroke_style, transform, tolerance, sink);
+    if (!sink || !isfinite(stroke_width) || stroke_width < 0) return E_INVALIDARG;
+    if (stroke_style || r->left > r->right || r->top > r->bottom) return E_NOTIMPL;
+    ID2D1SimplifiedGeometrySink_SetFillMode(sink, D2D1_FILL_MODE_ALTERNATE);
+    ID2D1SimplifiedGeometrySink_SetSegmentFlags(sink, D2D1_PATH_SEGMENT_NONE);
+    for (side = 0; side < 2; ++side)
+    {
+        float inset = side ? half : -half;
+        if (side && stroke_width && (r->right - r->left <= stroke_width || r->bottom - r->top <= stroke_width))
+            break;
+        points[0] = (D2D1_POINT_2F){r->left + inset, r->top + inset};
+        points[1] = (D2D1_POINT_2F){r->right - inset, r->top + inset};
+        points[2] = (D2D1_POINT_2F){r->right - inset, r->bottom - inset};
+        points[3] = (D2D1_POINT_2F){r->left + inset, r->bottom - inset};
+        for (i = 0; i < 4; ++i)
+            if (transform) d2d_point_transform(&points[i], transform, points[i].x, points[i].y);
+        ID2D1SimplifiedGeometrySink_BeginFigure(sink, points[0], D2D1_FIGURE_BEGIN_FILLED);
+        ID2D1SimplifiedGeometrySink_AddLines(sink, &points[1], 3);
+        ID2D1SimplifiedGeometrySink_EndFigure(sink, D2D1_FIGURE_END_CLOSED);
+    }
+    return S_OK;
 }
 
 static void STDMETHODCALLTYPE d2d_rectangle_geometry_GetRect(ID2D1RectangleGeometry *iface, D2D1_RECT_F *rect)
