@@ -4941,6 +4941,7 @@ HRESULT d2d_device_init(struct d2d_device *device, ID2D1Factory1 *factory, IDXGI
     device->dxgi_device = dxgi_device;
     IDXGIDevice_AddRef(device->dxgi_device);
     device->allow_get_dxgi_device = allow_get_dxgi_device;
+    device->max_feature_level = 0;
 
     for (unsigned int i = 0; i < ARRAY_SIZE(shape_info); ++i)
     {

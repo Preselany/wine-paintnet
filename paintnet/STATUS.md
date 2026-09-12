@@ -14,8 +14,8 @@ WhiteLevelAdjustment, custom image shaders, document-thumbnail rendering, and
 a contained geometry subtraction in ColorRectangleControl. Default-stroke widening
 and path-combination support now also pass that control. Startup
 now passes CompositorController activation with the initial lifecycle support.
-Window feedback configuration now also works. Startup currently fails in
-ID2D1EffectContext::GetMaximumSupportedFeatureLevel while the canvas initializes.
+Window feedback configuration now also works. The feature-level query now also passes. Startup currently fails in transformed
+geometry widening while the default brush tool is activated.
 The editor remains unusable, and compositor visual presentation is unimplemented.
 
 Command-list DrawImage replay and source-copy compositing are local prototypes.
@@ -579,3 +579,16 @@ cover unset values, size-only queries, invalid windows, all 13 accepted types,
 and the FEEDBACK_MAX sentinel, which Windows accepts without changing settings.
 This implements configuration storage; it does not add Wine touch-feedback
 visual effects. Paint.NET uses it to disable feedback on its canvas.
+
+## Effect feature-level queries
+
+GetMaximumSupportedFeatureLevel queries adapter context-state capabilities once
+per Direct2D device, capped at Direct2D 11.1. It preserves native list-order
+selection and failure outputs even when the original Direct3D device was created
+at a lower feature level. Native tests cover 47 input arrays at levels 10.0 and
+11.0, with and without single-threaded creation, including repeated queries.
+
+DXVK 3.1 has a measured backend difference: a query-only CreateDeviceContextState
+promotes the device's reported feature level. Native Windows leaves it unchanged.
+Four TODO assertions record that behavior separately from Direct2D query results.
+Adapters below 11.1 and concurrent cache initialization remain unverified.

@@ -2356,9 +2356,45 @@ static HRESULT STDMETHODCALLTYPE d2d_effect_context_CreateEffect(ID2D1EffectCont
 static HRESULT STDMETHODCALLTYPE d2d_effect_context_GetMaximumSupportedFeatureLevel(ID2D1EffectContext1 *iface,
         const D3D_FEATURE_LEVEL *levels, UINT32 level_count, D3D_FEATURE_LEVEL *max_level)
 {
-    FIXME("iface %p, levels %p, level_count %u, max_level %p stub!\n", iface, levels, level_count, max_level);
+    static const D3D_FEATURE_LEVEL supported_levels[] =
+    {
+        D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_1,
+        D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_9_3, D3D_FEATURE_LEVEL_9_2, D3D_FEATURE_LEVEL_9_1,
+    };
+    struct d2d_effect_context *context = impl_from_ID2D1EffectContext1(iface);
+    struct d2d_device *device = context->device_context->device;
+    ID3D11Device1 *d3d = context->device_context->d3d_device;
+    D3D_FEATURE_LEVEL supported;
+    HRESULT hr = D2DERR_INSUFFICIENT_DEVICE_CAPABILITIES;
+    UINT32 i, flags;
 
-    return E_NOTIMPL;
+    TRACE("iface %p, levels %p, level_count %u, max_level %p.\n", iface, levels, level_count, max_level);
+    if (!levels || !max_level) return E_INVALIDARG;
+    if (!level_count) return hr;
+    supported = InterlockedCompareExchange(&device->max_feature_level, 0, 0);
+    if (!supported)
+    {
+        /* Context states expose the adapter's capabilities even when the caller
+         * created its D3D device at a lower emulated level. Direct2D caps this at
+         * 11.1. A NULL state pointer queries support without changing active state. */
+        flags = ID3D11Device1_GetCreationFlags(d3d) & D3D11_CREATE_DEVICE_SINGLETHREADED
+                ? D3D11_1_CREATE_DEVICE_CONTEXT_STATE_SINGLETHREADED : 0;
+        hr = ID3D11Device1_CreateDeviceContextState(d3d, flags, supported_levels, ARRAY_SIZE(supported_levels),
+                D3D11_SDK_VERSION, &IID_ID3D11Device1, &supported, NULL);
+        if (FAILED(hr)) return hr;
+        InterlockedCompareExchange(&device->max_feature_level, supported, 0);
+    }
+    /* Native replaces lower compatible candidates in list order, stopping as
+     * soon as the device's maximum is present. Preserve output on failure. */
+    hr = D2DERR_INSUFFICIENT_DEVICE_CAPABILITIES;
+    for (i = 0; i < level_count; ++i)
+    {
+        if ((int)levels[i] > (int)supported) continue;
+        *max_level = levels[i];
+        hr = S_OK;
+        if (levels[i] == supported) break;
+    }
+    return hr;
 }
 
 static HRESULT d2d_effect_node_create(ID2D1Effect *effect, ID2D1TransformNode **node);

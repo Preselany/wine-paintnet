@@ -890,3 +890,23 @@ cases and 176,905 checks with 31 TODO failures and zero ordinary failures
 and fails at GetMaximumSupportedFeatureLevel during canvas initialization
 (`paintnet-20260912-054455-414605.log`, `pdncrash.40.log`). Visual presentation
 and editing remain unverified.
+
+## Effect feature levels — September 12
+
+Native probes 089 and 091 compare 47 requested-level arrays on devices created
+at 11.0 and 10.0. All 94 Direct2D result records match the implementation. Probe
+090 accidentally reused the previous executable after a compile failure and is
+not used for context-state comparisons. Native focused job 093 passes 784 checks,
+including single-threaded devices. Wine passes the same test with four TODOs for
+DXVK's existing device-level promotion during the prerequisite capability query.
+
+The complete focused suite passes 30 cases / 177,689 checks, with 35 TODOs and
+zero ordinary failures (`feature-level-full-focused.log`). All 312 original
+Paint.NET binaries pass verification. Startup passes the device feature queries
+and reaches transformed ellipse widening during brush activation
+(`paintnet-20260912-060257-424706.log`, `pdncrash.41.log`). No editor session is
+yet usable.
+
+The implementation uses the public context-state query without changing active
+D3D context state. DXVK's reported-device-level promotion is visible in its
+[CreateDeviceContextState implementation](https://github.com/doitsujin/dxvk/blob/v3.1/src/d3d11/d3d11_device.cpp#L1316).
