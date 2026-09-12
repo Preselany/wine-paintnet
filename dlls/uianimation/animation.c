@@ -47,7 +47,7 @@ struct storyboard_transition
     struct list entry;
     struct animation_variable *variable;
     struct animation_transition *transition;
-    double start, duration, initial, velocity;
+    double start, duration, initial, velocity, cutoff;
     struct storyboard_keyframe *start_key, *end_key;
     BOOL at_keyframe, between_keyframes;
 };
@@ -74,7 +74,7 @@ struct animation_storyboard
     BOOL has_loop;
     UI_ANIMATION_STORYBOARD_STATUS status;
     double start, duration, elapsed, delay;
-    BOOL active;
+    BOOL active, truncated;
     IUIAnimationStoryboardEventHandler *handler;
 };
 
@@ -93,6 +93,7 @@ struct animation_manager
 static void manager_destroy(struct animation_manager *manager);
 static void storyboard_destroy(struct animation_storyboard *storyboard);
 static void variable_destroy(struct animation_variable *variable);
+static double transition_value(struct storyboard_transition *entry, double time, double *velocity);
 
 static struct animation_manager *manager_from_iface(IUIAnimationManager *iface)
 {
@@ -284,6 +285,64 @@ static void manager_refresh_status(struct animation_manager *manager)
     }
 }
 
+static double transition_end(const struct animation_storyboard *storyboard,
+        const struct storyboard_transition *entry)
+{
+    double end = storyboard->has_loop ? storyboard->duration : entry->start + entry->duration;
+    return min(storyboard->start + end, entry->cutoff);
+}
+
+static struct animation_storyboard *variable_next_storyboard(struct animation_variable *variable)
+{
+    struct animation_storyboard *storyboard, *next = NULL;
+    struct storyboard_transition *entry;
+
+    LIST_FOR_EACH_ENTRY(storyboard, &variable->manager->storyboards, struct animation_storyboard, entry)
+    {
+        if (!storyboard->active) continue;
+        LIST_FOR_EACH_ENTRY(entry, &storyboard->transitions, struct storyboard_transition, entry)
+        {
+            if (entry->variable != variable || transition_end(storyboard, entry) <= variable->manager->time) continue;
+            if (!next || storyboard->start < next->start) next = storyboard;
+        }
+    }
+    return next;
+}
+
+static double storyboard_sample_time(const struct animation_storyboard *storyboard, double elapsed)
+{
+    double period;
+    if (!storyboard->has_loop || elapsed < storyboard->loop_start) return elapsed;
+    period = storyboard->loop_end - storyboard->loop_start;
+    if (!period) return elapsed;
+    if (storyboard->loop_count == -1 || elapsed < storyboard->loop_start + period * storyboard->loop_count)
+        return storyboard->loop_start + fmod(elapsed - storyboard->loop_start, period);
+    return elapsed - period * (storyboard->loop_count - 1.0);
+}
+
+static void variable_project(struct animation_variable *variable, double time, double *value, double *velocity)
+{
+    struct animation_storyboard *storyboard;
+    struct storyboard_transition *entry;
+    double latest = -DBL_MAX, sample, start;
+
+    *value = variable->value;
+    *velocity = variable->velocity;
+    LIST_FOR_EACH_ENTRY(storyboard, &variable->manager->storyboards, struct animation_storyboard, entry)
+    {
+        if (!storyboard->active || storyboard->start > time) continue;
+        sample = storyboard_sample_time(storyboard, min(time, storyboard->start + storyboard->duration) - storyboard->start);
+        LIST_FOR_EACH_ENTRY(entry, &storyboard->transitions, struct storyboard_transition, entry)
+        {
+            start = storyboard->start + entry->start;
+            if (entry->variable != variable || sample < entry->start || start < latest) continue;
+            *value = transition_value(entry, min(sample, entry->cutoff - storyboard->start) - entry->start, velocity);
+            *value = min(max(*value, variable->lower), variable->upper);
+            latest = start;
+        }
+    }
+}
+
 static void storyboard_deactivate(struct animation_storyboard *storyboard, UI_ANIMATION_STORYBOARD_STATUS status)
 {
     struct storyboard_transition *entry;
@@ -294,9 +353,12 @@ static void storyboard_deactivate(struct animation_storyboard *storyboard, UI_AN
         entry->transition->active = FALSE;
         if (entry->variable->current == storyboard)
         {
-            entry->variable->current = NULL;
-            entry->variable->velocity = 0;
-            entry->variable->final = entry->variable->value;
+            entry->variable->current = variable_next_storyboard(entry->variable);
+            if (!entry->variable->current)
+            {
+                entry->variable->velocity = 0;
+                entry->variable->final = entry->variable->value;
+            }
         }
     }
     storyboard_set_status(storyboard, status);
@@ -600,6 +662,7 @@ static HRESULT WINAPI storyboard_AddTransition(IUIAnimationStoryboard *iface, IU
     if (!(entry = calloc(1, sizeof(*entry)))) return E_OUTOFMEMORY;
     entry->variable = variable;
     entry->transition = transition;
+    entry->cutoff = DBL_MAX;
     IUIAnimationVariable_AddRef(variable_iface);
     IUIAnimationTransition_AddRef(transition_iface);
     transition->used = TRUE;
@@ -711,7 +774,7 @@ static HRESULT WINAPI storyboard_AddTransitionBetweenKeyframes(IUIAnimationStory
     return S_OK;
 }
 
-static HRESULT storyboard_resolve_timing(struct animation_storyboard *storyboard);
+static HRESULT storyboard_resolve_timing(struct animation_storyboard *storyboard, BOOL scheduling);
 
 static HRESULT WINAPI storyboard_RepeatBetweenKeyframes(IUIAnimationStoryboard *iface, UI_ANIMATION_KEYFRAME start,
         UI_ANIMATION_KEYFRAME end, INT32 count)
@@ -725,7 +788,7 @@ static HRESULT WINAPI storyboard_RepeatBetweenKeyframes(IUIAnimationStoryboard *
     if (count < -1) return E_INVALIDARG;
     if (FAILED(hr = storyboard_get_keyframe(storyboard, start, &start_key))) return hr;
     if (FAILED(hr = storyboard_get_keyframe(storyboard, end, &end_key))) return hr;
-    if (FAILED(hr = storyboard_resolve_timing(storyboard))) return hr;
+    if (FAILED(hr = storyboard_resolve_timing(storyboard, FALSE))) return hr;
     start_time = keyframe_time(start_key);
     end_time = keyframe_time(end_key);
     if (start_time > end_time) return UI_E_START_KEYFRAME_AFTER_END;
@@ -769,7 +832,7 @@ static double transition_duration(struct animation_transition *transition, doubl
     return duration;
 }
 
-static HRESULT storyboard_resolve_timing(struct animation_storyboard *storyboard)
+static HRESULT storyboard_resolve_timing(struct animation_storyboard *storyboard, BOOL scheduling)
 {
     struct storyboard_transition *entry, *previous;
     storyboard->duration = 0;
@@ -779,6 +842,7 @@ static HRESULT storyboard_resolve_timing(struct animation_storyboard *storyboard
         entry->start = 0;
         entry->initial = entry->variable->value;
         entry->velocity = entry->variable->velocity;
+        if (scheduling) variable_project(entry->variable, storyboard->start, &entry->initial, &entry->velocity);
         LIST_FOR_EACH_ENTRY(previous, &storyboard->transitions, struct storyboard_transition, entry)
         {
             if (previous == entry) break;
@@ -809,6 +873,7 @@ static HRESULT WINAPI storyboard_Schedule(IUIAnimationStoryboard *iface, double 
     struct animation_manager *manager = storyboard->manager;
     struct storyboard_transition *entry;
     HRESULT hr;
+    TRACE("iface %p, time %.17g, result %p.\n", iface, now, result);
     if (result) *result = UI_ANIMATION_SCHEDULING_UNEXPECTED_FAILURE;
     if (storyboard_shutdown(storyboard)) return UI_E_SHUTDOWN_CALLED;
     if (!isfinite(now) || now < 0) return E_INVALIDARG;
@@ -819,10 +884,25 @@ static HRESULT WINAPI storyboard_Schedule(IUIAnimationStoryboard *iface, double 
         return S_OK;
     }
     if (manager->have_time && now < manager->time) return UI_E_TIME_BEFORE_LAST_UPDATE;
-    /* Conflict arbitration requires the application's priority comparisons. */
-    LIST_FOR_EACH_ENTRY(entry, &storyboard->transitions, struct storyboard_transition, entry)
-        if (entry->variable->current) return E_NOTIMPL;
-    if (FAILED(hr = storyboard_resolve_timing(storyboard))) return hr;
+    /* With the default priority policy, wait when all shared variables become
+     * available within the permitted delay; otherwise trim their old tracks. */
+    {
+        struct animation_storyboard *old;
+        struct storyboard_transition *track;
+        double available = now;
+        LIST_FOR_EACH_ENTRY(old, &manager->storyboards, struct animation_storyboard, entry)
+        {
+            if (!old->active) continue;
+            LIST_FOR_EACH_ENTRY(track, &old->transitions, struct storyboard_transition, entry)
+                LIST_FOR_EACH_ENTRY(entry, &storyboard->transitions, struct storyboard_transition, entry)
+                    if (track->variable == entry->variable) available = max(available, transition_end(old, track));
+        }
+        if (available < DBL_MAX && (storyboard->delay == UI_ANIMATION_SECONDS_EVENTUALLY
+                || available - now <= storyboard->delay)) now = available;
+    }
+    storyboard->start = now;
+    storyboard->truncated = FALSE;
+    if (FAILED(hr = storyboard_resolve_timing(storyboard, TRUE))) return hr;
     if (storyboard->has_loop)
     {
         double period;
@@ -835,12 +915,35 @@ static HRESULT WINAPI storyboard_Schedule(IUIAnimationStoryboard *iface, double 
         else storyboard->duration += period * (storyboard->loop_count - 1.0);
         if (!isfinite(storyboard->duration)) return UI_E_FP_OVERFLOW;
     }
+    {
+        struct animation_storyboard *old;
+        struct storyboard_transition *track;
+        double duration, end;
+        LIST_FOR_EACH_ENTRY(old, &manager->storyboards, struct animation_storyboard, entry)
+        {
+            if (!old->active) continue;
+            duration = 0;
+            LIST_FOR_EACH_ENTRY(track, &old->transitions, struct storyboard_transition, entry)
+            {
+                LIST_FOR_EACH_ENTRY(entry, &storyboard->transitions, struct storyboard_transition, entry)
+                {
+                    if (track->variable != entry->variable) continue;
+                    if (transition_end(old, track) > now + entry->start) old->truncated = TRUE;
+                    track->cutoff = min(track->cutoff, now + entry->start);
+                }
+                end = old->has_loop ? old->duration : track->start + track->duration;
+                duration = max(duration, min(end, track->cutoff - old->start));
+            }
+            old->duration = duration;
+        }
+    }
     LIST_FOR_EACH_ENTRY(entry, &storyboard->transitions, struct storyboard_transition, entry)
     {
         if (entry->between_keyframes) entry->transition->duration = entry->duration;
         entry->transition->active = TRUE;
+        entry->cutoff = DBL_MAX;
         entry->variable->final = min(max(entry->transition->final,entry->variable->lower),entry->variable->upper);
-        entry->variable->current = storyboard;
+        if (!entry->variable->current) entry->variable->current = storyboard;
     }
     storyboard->start = now;
     storyboard->elapsed = 0;
@@ -1084,22 +1187,12 @@ static HRESULT WINAPI manager_Update(IUIAnimationManager *iface, double now, UI_
         if (elapsed < 0) goto next;
         storyboard->elapsed = min(elapsed, storyboard->duration);
         storyboard_changed = FALSE;
-        sample_time = elapsed;
-        if (storyboard->has_loop && sample_time >= storyboard->loop_start)
-        {
-            double period = storyboard->loop_end - storyboard->loop_start;
-            if (period)
-            {
-                if (storyboard->loop_count == -1 || sample_time < storyboard->loop_start + period * storyboard->loop_count)
-                    sample_time = storyboard->loop_start + fmod(sample_time - storyboard->loop_start, period);
-                else sample_time -= period * (storyboard->loop_count - 1.0);
-            }
-        }
+        sample_time = storyboard_sample_time(storyboard, elapsed);
         if (elapsed < storyboard->duration && sample_time >= storyboard->first_start)
             storyboard_set_status(storyboard, UI_ANIMATION_STORYBOARD_PLAYING);
         LIST_FOR_EACH_ENTRY(entry, &storyboard->transitions, struct storyboard_transition, entry)
         {
-            if (sample_time < entry->start) continue;
+            if (sample_time < entry->start || now >= entry->cutoff) continue;
             /* Only the last begun transition on each variable supplies this frame. */
             later = FALSE;
             LIST_FOR_EACH_ENTRY(candidate, &storyboard->transitions, struct storyboard_transition, entry)
@@ -1110,6 +1203,7 @@ static HRESULT WINAPI manager_Update(IUIAnimationManager *iface, double now, UI_
             if (&candidate->entry != &storyboard->transitions) continue;
             value = transition_value(entry, sample_time - entry->start, &velocity);
             variable = entry->variable;
+            variable->current = storyboard;
             variable->value = min(max(value, variable->lower), variable->upper);
             variable->velocity = velocity;
             if (variable->value != variable->previous)
@@ -1128,7 +1222,7 @@ static HRESULT WINAPI manager_Update(IUIAnimationManager *iface, double now, UI_
         }
         if (elapsed >= storyboard->duration)
         {
-            storyboard_set_status(storyboard, UI_ANIMATION_STORYBOARD_FINISHED);
+            storyboard_set_status(storyboard, storyboard->truncated ? UI_ANIMATION_STORYBOARD_TRUNCATED : UI_ANIMATION_STORYBOARD_FINISHED);
             storyboard_deactivate(storyboard, UI_ANIMATION_STORYBOARD_READY);
         }
 next:

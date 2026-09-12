@@ -2,6 +2,8 @@ TESTDLL = uianimation.dll
 IMPORTS = ole32
 
 SOURCES = \
+	queue.c \
+	conflict.c \
 	keyframes.c \
 	timeline.c \
 	uianimation.c

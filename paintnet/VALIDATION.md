@@ -1199,3 +1199,28 @@ Application launch paintnet-20260912-093450-534484.log remains open until a brus
 interaction. A8 mask creation succeeds; pdncrash.63.log instead fails in
 AnimatedValue.TryAnimateRawValueCore while committing the stroke. This is still
 an unusable-editor result, not a successful editing workflow.
+
+## Default animation arbitration — September 12
+
+Native reference 144 has 144 two-storyboard cases: linear, smooth-stop and looping
+old tracks; linear, smooth-stop and instantaneous new tracks; four delay policies;
+optional unrelated variable tracks; immediate and future requested starts. All
+measured values, previous/final values, statuses, elapsed times and current
+storyboards match Wine exactly. Reference 146 repeats the matrix with a third
+queued storyboard and reversed object-creation order; all 144 cases also match.
+The focused conflict and queue executables pass 19,393 and 23,569 checks on both
+Windows (jobs 145/147) and Wine, without TODOs. Existing timeline/keyframe tests
+still pass. Full animation-conflict-full-focused.log: 46 cases / 293,339 checks,
+96 existing TODO failures, no ordinary/flaky failures and no skips.
+
+The app diagnostic paintnet-20260912-094155-538772.log explicitly confirms the
+previous brush failure: Schedule rejects an already animated variable. With
+arbitration installed, paintnet-20260912-094815-540814.log / pdncrash.65.log passes
+scheduling but fails WICBitmapSource.CopyPixels while building a brush sprite.
+The WIC trace paintnet-20260912-095146-542588.log / pdncrash.66.log identifies
+copypixels_to_32bppBGRA's unsupported source conversion while targeting PBGRA.
+These remain failed brush tests; no successful editing workflow is claimed.
+
+Limits: custom priority comparison callbacks are still explicitly unsupported.
+The new tests cover default arbitration, not all callback orderings, overlapping
+keyframe intervals, compressed schedules, or every cancellation/lifetime edge.

@@ -721,3 +721,21 @@ statuses/bounds and 66 pixel cases; 14 blur-edge cases still differ. This remain
 uncommitted rendering work. A brush stroke passes A8 target creation but crashes
 when committing the stroke, in overlapping animation scheduling
 (pdncrash.63.log). Drawing and saving are still not verified.
+
+## Overlapping animations — September 12
+
+Default animation arbitration now schedules a new track after existing tracks
+when the permitted delay allows it, or trims their shared variable at takeover.
+Unrelated variables continue animating. Initial value and velocity are sampled
+at the actual start, and current/final values follow queued storyboard handoffs.
+
+Native and Wine comparisons match 144 two-storyboard cases and 144 three-storyboard
+cases. The focused regressions pass 19,393 and 23,569 checks on both platforms.
+The complete local suite passes 46 cases / 293,339 checks with 96 existing TODOs
+and no ordinary failures. Custom priority comparison handlers remain unsupported;
+callback-order conformance and complex overlapping keyframes need further tests.
+
+Brush interaction now passes the previous animation failure. The next failure
+is conversion of floating-point brush sprites to 32-bit pixels: a WIC format
+converter reaches an unimplemented path during CopyPixels (pdncrash.65/66.log).
+The editor can open, but drawing still crashes and saving remains unverified.
