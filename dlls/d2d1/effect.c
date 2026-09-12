@@ -622,10 +622,16 @@ static HRESULT d2d_transform_graph_add_node(struct d2d_transform_graph *graph,
     if (!(node = calloc(1, sizeof(*node))))
         return E_OUTOFMEMORY;
     node->input_count = ID2D1TransformNode_GetInputCount(object);
-    if (!(node->inputs = calloc(node->input_count, sizeof(*node->inputs))))
+    if (node->input_count)
     {
-        free(node);
-        return E_OUTOFMEMORY;
+        if (!(node->inputs = calloc(node->input_count, sizeof(*node->inputs)))
+                || !(node->effect_inputs = malloc(node->input_count * sizeof(*node->effect_inputs))))
+        {
+            free(node->inputs);
+            free(node);
+            return E_OUTOFMEMORY;
+        }
+        memset(node->effect_inputs, 0xff, node->input_count * sizeof(*node->effect_inputs));
     }
 
     node->object = object;
@@ -633,24 +639,6 @@ static HRESULT d2d_transform_graph_add_node(struct d2d_transform_graph *graph,
     list_add_tail(&graph->nodes, &node->entry);
 
     return S_OK;
-}
-
-static void d2d_transform_node_disconnect(struct d2d_transform_node *node)
-{
-    struct d2d_transform_node *output = node->output;
-    unsigned int i;
-
-    if (!output)
-        return;
-
-    for (i = 0; i < output->input_count; ++i)
-    {
-        if (output->inputs[i] == node)
-        {
-            output->inputs[i] = NULL;
-            break;
-        }
-    }
 }
 
 static void d2d_transform_graph_delete_node(struct d2d_transform_graph *graph,
@@ -662,12 +650,6 @@ static void d2d_transform_graph_delete_node(struct d2d_transform_graph *graph,
     list_remove(&node->entry);
     ID2D1TransformNode_Release(node->object);
 
-    for (i = 0; i < graph->input_count; ++i)
-    {
-        if (graph->inputs[i].node == node)
-            memset(&graph->inputs[i].node, 0, sizeof(graph->inputs[i].node));
-    }
-
     if (graph->output == node)
         graph->output = NULL;
 
@@ -676,11 +658,11 @@ static void d2d_transform_graph_delete_node(struct d2d_transform_graph *graph,
 
     LIST_FOR_EACH_ENTRY(other, &graph->nodes, struct d2d_transform_node, entry)
     {
-        if (other->output == node) other->output = NULL;
         for (i = 0; i < other->input_count; ++i)
             if (other->inputs[i] == node) other->inputs[i] = NULL;
     }
 
+    free(node->effect_inputs);
     free(node->inputs);
     free(node);
 }
@@ -737,7 +719,6 @@ static ULONG STDMETHODCALLTYPE d2d_transform_graph_Release(ID2D1TransformGraph *
     if (!refcount)
     {
         d2d_transform_graph_clear(graph);
-        free(graph->inputs);
         free(graph);
     }
 
@@ -775,10 +756,7 @@ static HRESULT STDMETHODCALLTYPE d2d_transform_graph_SetSingleTransformNode(ID2D
         return E_INVALIDARG;
 
     for (i = 0; i < graph->input_count; ++i)
-    {
-        graph->inputs[i].node = node;
-        graph->inputs[i].index = i;
-    }
+        node->effect_inputs[i] = i;
 
     return S_OK;
 }
@@ -845,9 +823,8 @@ static HRESULT STDMETHODCALLTYPE d2d_transform_graph_ConnectNode(ID2D1TransformG
     if (index >= to->input_count)
         return E_INVALIDARG;
 
-    d2d_transform_node_disconnect(from);
     to->inputs[index] = from;
-    from->output = to;
+    to->effect_inputs[index] = ~0u;
 
     return S_OK;
 }
@@ -871,8 +848,10 @@ static HRESULT STDMETHODCALLTYPE d2d_transform_graph_ConnectToEffectInput(ID2D1T
     if (node_index >= count)
         return E_INVALIDARG;
 
-    graph->inputs[input_index].node = node;
-    graph->inputs[input_index].index = node_index;
+    /* Connections belong to destination ports: one graph input may feed
+     * several nodes, or several ports of the same node. */
+    node->inputs[node_index] = NULL;
+    node->effect_inputs[node_index] = input_index;
     graph->passthrough = false;
 
     return S_OK;
@@ -931,11 +910,6 @@ static HRESULT d2d_transform_graph_create(UINT32 input_count, struct d2d_transfo
     object->refcount = 1;
     list_init(&object->nodes);
 
-    if (!(object->inputs = calloc(input_count, sizeof(*object->inputs))))
-    {
-        free(object);
-        return E_OUTOFMEMORY;
-    }
     object->input_count = input_count;
 
     *graph = object;
@@ -3243,9 +3217,8 @@ static HRESULT d2d_effect_input_source(struct d2d_effect *effect, struct d2d_tra
         }
         outer = &frames[scope];
         graph = outer->effect->graph;
-        for (i = 0; i < graph->input_count; ++i)
-            if (graph->inputs[i].node == binding && graph->inputs[i].index == index) break;
-        if (i == graph->input_count) return D2DERR_INVALID_GRAPH_CONFIGURATION;
+        i = binding->effect_inputs[index];
+        if (i >= graph->input_count) return D2DERR_INVALID_GRAPH_CONFIGURATION;
         effect = outer->effect;
         binding = outer->binding;
         scope = outer->scope;

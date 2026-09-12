@@ -9,10 +9,11 @@ managed renderer does not count toward this project's compatibility status.
 ## Current state — September 12, 2026
 
 The editor is not yet usable. The local working tree passes color-icon rendering,
-window creation, the busy-spinner animation, zoom-slider gradient setup, and the
-WhiteLevelAdjustment effect. Startup now fails when Paint.NET's SrgbToLinear
-custom shader calls ID2D1DrawInfo::SetInputDescription for its image input.
-The custom draw-transform implementation currently renders source-only shaders.
+window creation, the busy-spinner animation, zoom-slider gradient setup,
+WhiteLevelAdjustment, custom image-shader setup, and document-thumbnail graph
+validation. The latest startup failure is command-list replay of DrawImage in
+DocumentStrip. That path also requests bounded source-copy compositing, which
+Wine currently ignores. Both drawing features are under development.
 
 These runs include command-list rasterization, Color Management, and gradient
 rendering work. ICC conversion and primitive antialiasing/strokes still have
@@ -476,3 +477,15 @@ and color-space metadata. Linear and radial brushes now use premultiplied,
 8-bit color ramps and honor gamma and clamp/wrap/mirror modes. The standard
 linear probe matches Windows for gamma 2.2. Gamma-1 quantization and radial
 clamp differences remain measured limitations; see VALIDATION.md.
+
+## Shared transform-graph inputs and outputs
+
+Graph connections now belong to destination input ports. Connecting one effect
+input or one transform output to a second destination preserves the first
+connection. Replacing a port's source switches cleanly between an effect input
+and a transform output. Native Premultiply/UnPremultiply branch tests verify
+both outputs, reconnection, graph reset, and removal of an unrelated branch.
+
+A separate native behavior remains unresolved: removing an already realized
+upstream node leaves its connection usable on Windows. Wine drops that
+connection. The regression records this explicitly with two todo checks.

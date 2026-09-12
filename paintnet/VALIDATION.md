@@ -775,3 +775,20 @@ suite passes 109,524 checks, zero failures, with one existing animation todo
   reported repeat invokes the test executable directly after all script edits.
 - App run `paintnet-20260912-034647-347428.log` passes the zoom-slider interface
   request and reaches the formerly missing WhiteLevelAdjustment effect.
+
+## Transform-graph fanout — September 12
+
+Native probes 066 and 067 connect one graph input to Premultiply and
+UnPremultiply and one node output to two downstream nodes. Wine previously
+lost the first edge; six of twelve rendering cases failed. The fix matches
+Windows bounds, HRESULTs, and all RGBA values in eleven cases. The remaining
+case removes a connected upstream node after realization: Windows retains
+the realized connection, whereas Wine reports INVALID_GRAPH_CONFIGURATION.
+Re-invalidating the effect input on Windows preserves this observation.
+
+The focused graph_fanout regression passes 298 checks on native Windows/WARP
+and 279 on Wine, with two explicit todo failures and no ordinary failures.
+The existing effect_node (222 checks) and draw_transform (75,824 checks)
+regressions still pass. Paint.NET now gets through DocumentStrip bounds
+validation; pdncrash.32.log instead records a DrawImage command replay failure
+at EndDraw. All 312 original Paint.NET runtime binaries remain unchanged.
