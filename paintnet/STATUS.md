@@ -22,9 +22,12 @@ replay now also passes History-panel drawing. The Layers panel gets through
 half-float WIC metadata lookup and bitmap upload. Local layer rendering now
 advances this panel. Crop bounds and pixels pass focused native comparisons;
 ellipse and rounded-rectangle bounds now pass native checks. Local geometry
-stroke replay and the Flood/Composite effects now reach the editor. A brush click
-still crashes: one run failed animation scheduling, and the next failed creation
-of an A8 WIC render target. The canvas has visible incomplete regions and toolbar
+stroke replay and the Flood/Composite effects now reach the editor. Startup is still unreliable. Two memory fixes now preserve recorded command
+payloads during buffer growth and retain the correct font-collection references
+during concurrent initialization. The latest run fails when a Layers-panel custom
+effect attempts to render an infinite region beneath Gaussian Blur. Earlier brush
+clicks failed animation scheduling and A8 WIC render-target creation; the alpha
+format is now registered, while the render-target changes remain a local prototype. The canvas has visible incomplete regions and toolbar
 labels render incorrectly. Gaussian Blur,
 glyph replay, and some layer mask edges still have measured Windows differences.
 The editor remains unusable, and compositor visual presentation is unimplemented.
@@ -683,3 +686,21 @@ prototype: 126 of 128 direct/replay pixel pairs match in Wine, but two transform
 ellipse cases differ by one pixel and native stroke-edge differences remain.
 The editor is still unusable. The full local suite passes 38 cases / 222,109
 checks with 96 existing TODO failures and no ordinary failures.
+
+## Drawing data and font lifetimes — September 12
+
+Growing a command-list buffer now relocates its embedded glyph, image, bitmap,
+and opacity-mask payload pointers. Concurrent system-font cache initialization
+now releases each call's own collection reference. The focused regressions pass
+2,067 and 304 checks respectively on Windows and Wine. The previous font-cache
+implementation failed every one of eight concurrent initialization rounds.
+
+WIC now registers eight-bit alpha format metadata, with a native-verified
+25-check regression. This is separate from the uncommitted A8 and floating-point
+WIC render-target implementation. The complete focused suite passes 43 cases /
+247,843 checks with 96 existing TODO failures and no ordinary failures.
+
+The private X display stopped during testing; its window-creation failures were
+rechecked after restarting it. The restored-display application run still fails
+in LayersStrip with EXCEEDS_MAX_BITMAP_SIZE while trying to allocate an infinite
+custom-effect output (pdncrash.62.log). The editor remains unusable.

@@ -1143,3 +1143,31 @@ canvas and toolbar defects. A brush click crashes in animation scheduling
 WIC render-target format (pdncrash.56.log,
 paintnet-20260912-085022-510330.log). Editing and save/reopen are not yet working
 reliably. These startup results also include the older local rendering prototypes.
+
+## Recorded payloads, concurrent font cache, and A8 metadata — September 12
+
+Native job 141 and Wine pass the same focused executables: command_data 2,067
+checks, font_cache 304 checks, alpha_format 25 checks, no TODOs or failures.
+Command recording repeatedly grows its buffer while retaining all four variable
+payload types, then validates them through the public command sink. The baseline
+reports corrupt glyph indices, advances, offsets and description and fails to
+complete. Eight isolated-font-factory rounds start twelve callers together and
+retain every returned collection. The baseline underretains the common collection
+(one reference for twelve callers) in all eight rounds.
+
+The A8 test checks pixel metadata, channel masks, allocation and cropped/padded
+CopyPixels data. Reference job 139 also confirms native alpha-format metadata.
+The full restored-display suite passes 43 cases / 247,843 checks, with 96 existing
+TODO failures, no ordinary/flaky failures, and no skips. Evidence logs are
+command-data-before.log, command-data-fixed.log, font-cache-before.log,
+font-cache-fixed.log, wic-alpha-focused.log, and
+memory-full-focused-display-restored.log. An earlier suite ran after the private
+X display had exited; its window failures are environmental, and that run is not
+used as passing validation.
+
+Application binaries remain unchanged (312 verified). Restoring the display
+removes the window-handle failure in pdncrash.61.log. The subsequent launch
+paintnet-20260912-092403-530078.log / pdncrash.62.log fails LayersStrip rendering:
+a custom effect below Gaussian Blur tries to allocate INT_MIN..INT_MAX bounds.
+Finite requested-region propagation remains under investigation. No working
+editing/save workflow is claimed.
