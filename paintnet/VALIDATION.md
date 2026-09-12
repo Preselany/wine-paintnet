@@ -1283,3 +1283,44 @@ the next investigation is the text-layout/resource lifetime error.
 No native Windows conformance claim is made for the GTK transport test. Remaining
 callback, custom-control and desktop-backend limitations are in `README.md` and
 `STATUS.md`.
+
+## Wrapped glyph raster copies and texture buffers (September 12)
+
+- Native job `177-glyph-buffer-validation`: `glyph_clip`, **6,370 checks**, no
+  TODOs, failures or skips. Jobs 175/176 established the bounds and pixel oracle:
+  a wrapped glyph contributes horizontal extent and visible partial ink; it
+  cannot simply be discarded because its translated rectangle is inverted.
+- Wine `glyph-buffer-after.log`: **6,370 checks**, two existing texture-type
+  TODOs, no ordinary/flaky failures or skips. The before-fix wrapped-glyph run
+  showed pixel corruption and terminated before its normal test summary.
+- `glyph-clip-full-focused.log`: **54 summaries, 598,756 reported checks** plus
+  118 silenced TODOs; 363 total TODOs and no ordinary/flaky failures or skips.
+  This working-tree suite includes the separate unfinished `layer_render` work.
+- Upstream `glyph-clip-upstream-font.log`: **324,148 reported checks** plus
+  5,649 silenced TODOs; 5,804 total TODOs, no ordinary/flaky failures, three skips.
+  `glyph-clip-upstream-layout.log`: **76,689 checks**, 49 TODOs, no ordinary/flaky
+  failures, one skip.
+- Default module build, including DirectWrite and Windows Codecs, completes in
+  `glyph-clip-default-build.log`. The focused tests above ran against the newly
+  installed DirectWrite module. Other installed rendering prototypes are not
+  thereby proven ready for release.
+
+The focused matrix covers both glyph orders, aliased/natural rendering,
+ClearType/grayscale antialiasing, baseline/transform translation and both
+signed-boundary origins. Each texture has guard bytes; wrapped pixels are
+compared with the appropriate ordinary-origin crop on the same platform.
+Public-buffer cases cover outside ink, empty/inverted bounds, full signed-width
+rectangles, overflowing areas, both texture types, error precedence and output
+preservation on failure. Native permits an empty aliased texture from a
+ClearType analysis where Wine still rejects it; two TODOs preserve that gap.
+
+After installing the fix, official app `633105` (all 312 binaries verified)
+adds “Glyph clipping verified” to the prior text/brush fixture, saves a PNG,
+closes it, opens it through GTK and saves a second copy. The added text changes
+601 pixels within (148,112)-(302,128). Both 800 × 600 PNGs have all 480,000 RGBA
+pixels equal, are 3,341 bytes, and have SHA-256
+`dcc1c10d5fb135f5c8cf710a61307082c28bf1d674d2513e8773ef7b8fbce348`.
+Evidence: `work/classic/logs/paintnet-20260912-132439-633105.log` and
+`work/classic/validation/glyph-clip-roundtrip-report.json`. This validates one
+normal text workflow after the memory fix; it does not replace the extreme
+coordinate regression or establish complete text compatibility.

@@ -23,8 +23,9 @@ allocation failure, but measured blur-edge differences remain.
 
 The brush-related text-layout memory corruption was traced to rasterizing text
 with extreme coordinates into a logically empty DC target. A local empty-target
-guard avoids that path; DirectWrite's underlying wrapped-coordinate handling
-still needs its own regression and fix. The next toolbar crash was an
+guard avoids that path. DirectWrite now also clips wrapped glyph raster copies
+to their allocated run bounds, with native-validated pixel and buffer regressions
+described below. The next toolbar crash was an
 unimplemented primitive geometry combination. Ellipse, rounded-rectangle,
 transformed, and overlapping rectangle combinations now reach the existing
 boolean geometry implementation. Rounded-rectangle simplification also places
@@ -1031,3 +1032,35 @@ Wayland portals and other desktop chooser backends still need work. The current
 helper delivers the final state and reopens after a veto. Rendering, effects,
 more file formats, long-running editing and hardware optimization also remain
 unfinished; this milestone does not establish full Paint.NET compatibility.
+
+## Wrapped DirectWrite glyphs and alpha texture sizing — September 12
+
+A glyph translated across the signed-coordinate boundary can have an inverted
+rectangle even though part of its raster remains visible. Wine previously
+excluded that glyph from the run allocation and then copied its entire raster,
+corrupting pixels and writing beyond the buffer. Bounds now accumulate each
+axis as observed on Windows, and raster copies clip to the allocated run using
+the original glyph dimensions. Simply dropping inverted glyphs would lose
+visible pixels and did not match the native reference.
+
+Allocation and texture-copy arithmetic now use wide dimensions. Public alpha
+texture requests validate empty/inverted rectangles and byte counts before
+writing the caller's buffer. Requests whose ClearType byte count overflows the
+32-bit API length return the measured arithmetic-overflow error. Unsupported
+ClearType requests on aliased analyses retain the native error precedence.
+
+The new `glyph_clip` regression passes 6,370 checks on Windows, with no TODOs,
+failures or skips. Wine has two known TODOs and no ordinary failures. Wrapped
+pixel cases compare the result with the corresponding crop of ordinary-origin
+rendering using the embedded test font. This checks clipping without assuming
+that the FreeType and Windows font rasterizers produce identical bytes.
+Two existing upstream TODO markers are removed because error precedence now
+matches Windows. Alternative aliased textures from ClearType analyses remain
+incomplete; extreme font sizes and all coordinate-overflow paths are not proven.
+
+The updated private editor renders an additional text line and saves it through
+GTK and the PNG codec. Broader text styles, editing workflows, effects and
+hardware performance still require validation. The default build and documented
+installation now include DirectWrite and Windows Codecs, whose fixes are needed
+by the app. This corrects omitted modules, not the remaining packaging and
+rendering work required for a fully reproducible supported release.
