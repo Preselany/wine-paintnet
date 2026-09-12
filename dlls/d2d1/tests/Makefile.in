@@ -15,6 +15,7 @@ SOURCES = \
 	draw_input.c \
 	effect_context.c \
 	feature_level.c \
+	ellipse_widen.c \
 	effect_identity.c \
 	effect_node.c \
 	graph_fanout.c \

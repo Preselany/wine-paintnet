@@ -5249,14 +5249,271 @@ static HRESULT STDMETHODCALLTYPE d2d_ellipse_geometry_ComputePointAtLength(ID2D1
     return E_NOTIMPL;
 }
 
+struct d2d_ellipse_stroke_point
+{
+    D2D1_POINT_2F p, normal;
+    BOOL corner;
+};
+
+struct d2d_ellipse_stroke
+{
+    struct d2d_ellipse_stroke_point *points;
+    size_t count, capacity;
+    float half, tolerance;
+    const D2D1_MATRIX_3X2_F *world;
+    BOOL polygon;
+};
+
+static HRESULT d2d_ellipse_stroke_append(struct d2d_ellipse_stroke *stroke,
+        D2D1_POINT_2F p, D2D1_POINT_2F tangent, BOOL corner)
+{
+    double length = hypot(tangent.x, tangent.y);
+    struct d2d_ellipse_stroke_point *point;
+    if (!length) return D2DERR_BAD_NUMBER;
+    if (!d2d_array_reserve((void **)&stroke->points, &stroke->capacity,
+            stroke->count + 1, sizeof(*stroke->points))) return E_OUTOFMEMORY;
+    point = &stroke->points[stroke->count++];
+    point->p = p;
+    point->normal = (D2D1_POINT_2F){tangent.y / length, -tangent.x / length};
+    point->corner = corner;
+    return S_OK;
+}
+
+static float d2d_ellipse_stroke_deviation(D2D1_POINT_2F a, D2D1_POINT_2F b, D2D1_POINT_2F p,
+        const D2D1_MATRIX_3X2_F *world)
+{
+    double x, y, length;
+    if (world)
+    {
+        d2d_point_transform(&a, world, a.x, a.y);
+        d2d_point_transform(&b, world, b.x, b.y);
+        d2d_point_transform(&p, world, p.x, p.y);
+    }
+    x = b.x - a.x; y = b.y - a.y; length = hypot(x, y);
+    return length ? fabs(x * (p.y - a.y) - y * (p.x - a.x)) / length : hypot(p.x - a.x, p.y - a.y);
+}
+
+static HRESULT d2d_ellipse_stroke_subdivide(struct d2d_ellipse_stroke *stroke,
+        const D2D1_POINT_2F p[4], BOOL corner, unsigned int depth)
+{
+    D2D1_POINT_2F left[4], right[4], middle, tangent, a, b, q;
+    double len;
+    float error;
+    unsigned int side;
+    HRESULT hr;
+
+    left[0] = p[0]; right[3] = p[3];
+    d2d_point_lerp(&left[1], &p[0], &p[1], .5f);
+    d2d_point_lerp(&right[2], &p[2], &p[3], .5f);
+    d2d_point_lerp(&middle, &p[1], &p[2], .5f);
+    d2d_point_lerp(&left[2], &left[1], &middle, .5f);
+    d2d_point_lerp(&right[1], &middle, &right[2], .5f);
+    d2d_point_lerp(&left[3], &left[2], &right[1], .5f);
+    right[0] = left[3];
+    if (stroke->polygon)
+    {
+        error = max(d2d_ellipse_stroke_deviation(p[0], p[3], p[1], stroke->world),
+                d2d_ellipse_stroke_deviation(p[0], p[3], p[2], stroke->world));
+    }
+    else
+    {
+        error = 0;
+        for (side = 0; side < 2; ++side)
+        {
+            float offset = side ? stroke->half : -stroke->half;
+            tangent = (D2D1_POINT_2F){p[1].x - p[0].x, p[1].y - p[0].y};
+            len = hypot(tangent.x, tangent.y);
+            if (!len) return D2DERR_BAD_NUMBER;
+            a = (D2D1_POINT_2F){p[0].x + offset * tangent.y / len, p[0].y - offset * tangent.x / len};
+            tangent = (D2D1_POINT_2F){p[3].x - p[2].x, p[3].y - p[2].y};
+            len = hypot(tangent.x, tangent.y);
+            if (!len) return D2DERR_BAD_NUMBER;
+            b = (D2D1_POINT_2F){p[3].x + offset * tangent.y / len, p[3].y - offset * tangent.x / len};
+            tangent = (D2D1_POINT_2F){right[1].x - left[2].x, right[1].y - left[2].y};
+            len = hypot(tangent.x, tangent.y);
+            if (!len) return D2DERR_BAD_NUMBER;
+            q = (D2D1_POINT_2F){left[3].x + offset * tangent.y / len, left[3].y - offset * tangent.x / len};
+            error = max(error, d2d_ellipse_stroke_deviation(a, b, q, stroke->world) * (4.0f / 3.0f));
+        }
+    }
+    if (error <= stroke->tolerance || depth >= 16)
+        return d2d_ellipse_stroke_append(stroke, p[3],
+                (D2D1_POINT_2F){p[3].x - p[2].x, p[3].y - p[2].y}, corner);
+    if (FAILED(hr = d2d_ellipse_stroke_subdivide(stroke, left, FALSE, depth + 1))) return hr;
+    return d2d_ellipse_stroke_subdivide(stroke, right, corner, depth + 1);
+}
+
+static void d2d_ellipse_stroke_vertex(ID2D1SimplifiedGeometrySink *sink, D2D1_POINT_2F p,
+        const D2D1_MATRIX_3X2_F *world, BOOL begin)
+{
+    if (world) d2d_point_transform(&p, world, p.x, p.y);
+    if (begin) ID2D1SimplifiedGeometrySink_BeginFigure(sink, p, D2D1_FIGURE_BEGIN_FILLED);
+    else ID2D1SimplifiedGeometrySink_AddLines(sink, &p, 1);
+}
+
+static void d2d_ellipse_stroke_arc(ID2D1SimplifiedGeometrySink *sink, D2D1_POINT_2F center,
+        D2D1_POINT_2F a, D2D1_POINT_2F b, float half, float tolerance,
+        const D2D1_MATRIX_3X2_F *world, unsigned int depth)
+{
+    D2D1_POINT_2F midpoint = {a.x + b.x, a.y + b.y}, pa, pb, pm;
+    double length = hypot(midpoint.x, midpoint.y);
+    if (length)
+    {
+        midpoint.x /= length; midpoint.y /= length;
+        pa = (D2D1_POINT_2F){center.x + half*a.x, center.y + half*a.y};
+        pb = (D2D1_POINT_2F){center.x + half*b.x, center.y + half*b.y};
+        pm = (D2D1_POINT_2F){center.x + half*midpoint.x, center.y + half*midpoint.y};
+        if (depth < 16 && d2d_ellipse_stroke_deviation(pa, pb, pm, world) > tolerance)
+        {
+            d2d_ellipse_stroke_arc(sink, center, a, midpoint, half, tolerance, world, depth + 1);
+            d2d_ellipse_stroke_arc(sink, center, midpoint, b, half, tolerance, world, depth + 1);
+            return;
+        }
+    }
+    d2d_ellipse_stroke_vertex(sink, (D2D1_POINT_2F){center.x + half*b.x, center.y + half*b.y}, world, FALSE);
+}
+
+/* Transform the center curve before constructing its stroke. The optional
+ * Widen matrix is applied afterwards, to the complete stroke outline. */
+static HRESULT d2d_ellipse_widen(ID2D1Factory *factory, const D2D1_ELLIPSE *ellipse,
+        const D2D1_MATRIX_3X2_F *stored,
+        float width, ID2D1StrokeStyle *style, const D2D1_MATRIX_3X2_F *world,
+        float tolerance, ID2D1SimplifiedGeometrySink *sink)
+{
+    struct d2d_ellipse_stroke stroke = {0};
+    D2D1_BEZIER_SEGMENT segments[4];
+    D2D1_POINT_2F first, p[4], a, b, n0, n1, *normals = NULL;
+    ID2D1PathGeometry *path = NULL;
+    ID2D1GeometrySink *collector;
+    double ax, ay, bx, by, trace, determinant, max_radius, min_radius2, length;
+    size_t i, j, side;
+    HRESULT hr;
+
+    if (!sink || !isfinite(width) || width < 0 || !isfinite(tolerance)) return E_INVALIDARG;
+    if (style && ID2D1StrokeStyle_GetDashStyle(style) != D2D1_DASH_STYLE_SOLID) return E_NOTIMPL;
+    if (!width) return S_OK;
+    if (!ellipse->radiusX || !ellipse->radiusY) return E_NOTIMPL;
+    stroke.half = width * .5f;
+    stroke.tolerance = tolerance > 0 ? tolerance : D2D1_DEFAULT_FLATTENING_TOLERANCE;
+    stroke.world = world;
+    ax = ellipse->radiusX; ay = 0; bx = 0; by = ellipse->radiusY;
+    if (stored)
+    {
+        ax = ellipse->radiusX * stored->m11; ay = ellipse->radiusX * stored->m12;
+        bx = ellipse->radiusY * stored->m21; by = ellipse->radiusY * stored->m22;
+    }
+    trace = ax*ax + ay*ay + bx*bx + by*by;
+    determinant = ax*by - ay*bx;
+    max_radius = sqrt((trace + sqrt(max(0, trace*trace - 4*determinant*determinant))) * .5);
+    if (!max_radius || !determinant) return E_NOTIMPL;
+    min_radius2 = determinant*determinant / (max_radius*max_radius);
+    stroke.polygon = stroke.half >= min_radius2 / max_radius;
+    d2d_ellipse_to_segments(ellipse, &first, segments);
+    if (stored)
+    {
+        d2d_point_transform(&first, stored, first.x, first.y);
+        for (i = 0; i < 4; ++i)
+        {
+            d2d_point_transform(&segments[i].point1, stored, segments[i].point1.x, segments[i].point1.y);
+            d2d_point_transform(&segments[i].point2, stored, segments[i].point2.x, segments[i].point2.y);
+            d2d_point_transform(&segments[i].point3, stored, segments[i].point3.x, segments[i].point3.y);
+        }
+    }
+    hr = d2d_ellipse_stroke_append(&stroke, first,
+            (D2D1_POINT_2F){segments[0].point1.x-first.x, segments[0].point1.y-first.y}, TRUE);
+    if (FAILED(hr)) goto done;
+    p[0] = first;
+    for (i = 0; i < 4; ++i)
+    {
+        p[1] = segments[i].point1; p[2] = segments[i].point2; p[3] = segments[i].point3;
+        if (FAILED(hr = d2d_ellipse_stroke_subdivide(&stroke, p, TRUE, 0))) goto done;
+        p[0] = p[3];
+    }
+    --stroke.count; /* The final point repeats the first. */
+    if (!stroke.polygon)
+    {
+        ID2D1SimplifiedGeometrySink_SetFillMode(sink, D2D1_FILL_MODE_WINDING);
+        ID2D1SimplifiedGeometrySink_SetSegmentFlags(sink, D2D1_PATH_SEGMENT_NONE);
+        for (side = 0; side < 2; ++side)
+        {
+            float offset = side ? -stroke.half : stroke.half;
+            for (i = 0; i < stroke.count; ++i)
+            {
+                const struct d2d_ellipse_stroke_point *point = &stroke.points[side ? stroke.count-1-i : i];
+                a = (D2D1_POINT_2F){point->p.x + offset*point->normal.x, point->p.y + offset*point->normal.y};
+                d2d_ellipse_stroke_vertex(sink, a, world, !i);
+            }
+            ID2D1SimplifiedGeometrySink_EndFigure(sink, D2D1_FIGURE_END_CLOSED);
+        }
+        hr = S_OK;
+        goto done;
+    }
+    if (!(normals = malloc(stroke.count * sizeof(*normals)))) {hr = E_OUTOFMEMORY; goto done;}
+    for (i = 0; i < stroke.count; ++i)
+    {
+        a = stroke.points[i].p; b = stroke.points[(i+1)%stroke.count].p;
+        length = hypot(b.x-a.x, b.y-a.y);
+        if (!length) {hr = D2DERR_BAD_NUMBER; goto done;}
+        normals[i] = (D2D1_POINT_2F){(b.y-a.y)/length, (a.x-b.x)/length};
+    }
+    if (FAILED(hr = ID2D1Factory_CreatePathGeometry(factory, &path))) goto done;
+    if (FAILED(hr = ID2D1PathGeometry_Open(path, &collector))) goto done;
+    ID2D1GeometrySink_SetFillMode(collector, D2D1_FILL_MODE_WINDING);
+    for (i = 0; i < stroke.count; ++i)
+    {
+        ID2D1SimplifiedGeometrySink *out = (ID2D1SimplifiedGeometrySink *)collector;
+        D2D1_POINT_2F quad[4];
+        a = stroke.points[i].p; b = stroke.points[(i+1)%stroke.count].p;
+        n0 = normals[(i+stroke.count-1)%stroke.count]; n1 = normals[i];
+        quad[0] = (D2D1_POINT_2F){a.x+stroke.half*n1.x,a.y+stroke.half*n1.y};
+        quad[1] = (D2D1_POINT_2F){b.x+stroke.half*n1.x,b.y+stroke.half*n1.y};
+        quad[2] = (D2D1_POINT_2F){b.x-stroke.half*n1.x,b.y-stroke.half*n1.y};
+        quad[3] = (D2D1_POINT_2F){a.x-stroke.half*n1.x,a.y-stroke.half*n1.y};
+        for (j = 0; j < 4; ++j) d2d_ellipse_stroke_vertex(out, quad[j], world, !j);
+        ID2D1SimplifiedGeometrySink_EndFigure(out, D2D1_FIGURE_END_CLOSED);
+        if (determinant < 0)
+        {
+            n0.x = -n0.x; n0.y = -n0.y; n1.x = -n1.x; n1.y = -n1.y;
+            b = n0; n0 = n1; n1 = b;
+        }
+        d2d_ellipse_stroke_vertex(out, a, world, TRUE);
+        d2d_ellipse_stroke_vertex(out, (D2D1_POINT_2F){a.x+stroke.half*n0.x,a.y+stroke.half*n0.y}, world, FALSE);
+        if (stroke.points[i].corner)
+        {
+            b = stroke.points[i].normal;
+            if (determinant < 0) {b.x = -b.x; b.y = -b.y;}
+            d2d_ellipse_stroke_arc(out, a, n0, b, stroke.half, stroke.tolerance, world, 0);
+            d2d_ellipse_stroke_arc(out, a, b, n1, stroke.half, stroke.tolerance, world, 0);
+        }
+        else d2d_ellipse_stroke_arc(out, a, n0, n1, stroke.half, stroke.tolerance, world, 0);
+        ID2D1SimplifiedGeometrySink_EndFigure(out, D2D1_FIGURE_END_CLOSED);
+    }
+    hr = ID2D1GeometrySink_Close(collector);
+    ID2D1GeometrySink_Release(collector);
+    if (SUCCEEDED(hr))
+    {
+        ID2D1SimplifiedGeometrySink_SetFillMode(sink, D2D1_FILL_MODE_WINDING);
+        ID2D1SimplifiedGeometrySink_SetSegmentFlags(sink, D2D1_PATH_SEGMENT_NONE);
+        hr = d2d_geometry_emit_boundary(unsafe_impl_from_ID2D1Geometry((ID2D1Geometry *)path), sink);
+    }
+done:
+    if (path) ID2D1PathGeometry_Release(path);
+    free(normals);
+    free(stroke.points);
+    return hr;
+}
+
 static HRESULT STDMETHODCALLTYPE d2d_ellipse_geometry_Widen(ID2D1EllipseGeometry *iface, float stroke_width,
         ID2D1StrokeStyle *stroke_style, const D2D1_MATRIX_3X2_F *transform, float tolerance,
         ID2D1SimplifiedGeometrySink *sink)
 {
-    FIXME("iface %p, stroke_width %.8e, stroke_style %p, transform %p, tolerance %.8e, sink %p stub!\n",
+    struct d2d_geometry *geometry = impl_from_ID2D1EllipseGeometry(iface);
+
+    TRACE("iface %p, stroke_width %.8e, stroke_style %p, transform %p, tolerance %.8e, sink %p.\n",
             iface, stroke_width, stroke_style, transform, tolerance, sink);
 
-    return E_NOTIMPL;
+    return d2d_ellipse_widen(geometry->factory, &geometry->u.ellipse.ellipse, NULL,
+            stroke_width, stroke_style, transform, tolerance, sink);
 }
 
 static void STDMETHODCALLTYPE d2d_ellipse_geometry_GetEllipse(ID2D1EllipseGeometry *iface, D2D1_ELLIPSE *ellipse)
@@ -6601,10 +6858,24 @@ static HRESULT STDMETHODCALLTYPE d2d_transformed_geometry_Widen(ID2D1Transformed
         ID2D1StrokeStyle *stroke_style, const D2D1_MATRIX_3X2_F *transform, float tolerance,
         ID2D1SimplifiedGeometrySink *sink)
 {
-    FIXME("iface %p, stroke_width %.8e, stroke_style %p, transform %p, tolerance %.8e, sink %p stub!\n",
+    struct d2d_geometry *geometry = impl_from_ID2D1TransformedGeometry(iface);
+    ID2D1EllipseGeometry *ellipse;
+    D2D1_ELLIPSE description;
+    HRESULT hr;
+
+    TRACE("iface %p, stroke_width %.8e, stroke_style %p, transform %p, tolerance %.8e, sink %p.\n",
             iface, stroke_width, stroke_style, transform, tolerance, sink);
 
-    return E_NOTIMPL;
+    if (SUCCEEDED(ID2D1Geometry_QueryInterface(geometry->u.transformed.src_geometry,
+            &IID_ID2D1EllipseGeometry, (void **)&ellipse)))
+    {
+        ID2D1EllipseGeometry_GetEllipse(ellipse, &description);
+        hr = d2d_ellipse_widen(geometry->factory, &description, &geometry->u.transformed.transform,
+                stroke_width, stroke_style, transform, tolerance, sink);
+        ID2D1EllipseGeometry_Release(ellipse);
+        return hr;
+    }
+    return d2d_path_widen_closed((ID2D1Geometry *)iface, stroke_width, stroke_style, transform, tolerance, sink);
 }
 
 static void STDMETHODCALLTYPE d2d_transformed_geometry_GetSourceGeometry(ID2D1TransformedGeometry *iface,

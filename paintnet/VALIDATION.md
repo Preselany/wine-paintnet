@@ -910,3 +910,23 @@ yet usable.
 The implementation uses the public context-state query without changing active
 D3D context state. DXVK's reported-device-level promotion is visible in its
 [CreateDeviceContextState implementation](https://github.com/doitsujin/dxvk/blob/v3.1/src/d3d11/d3d11_device.cpp#L1316).
+
+## Ellipse stroke outlines — September 12
+
+Native jobs 094–095 measure transformed ellipses at four stroke widths and two
+world transforms, with default and explicit solid round styles. Job 097 adds
+reflections. The circle samples, including strokes wider than the diameter,
+match all rendered pixels. Nonuniform shapes differ by 1–9 sampled edge pixels
+in affected cases, and some transformed bounds/areas differ due to flattening.
+The focused regression preserves the separate reflected native fixtures.
+
+Native focused job 098 passes 1,374 checks. Wine passes 1,374 checks with 51
+explicit TODOs for the measured nonuniform-ellipse differences and zero ordinary
+failures. The complete suite runs 31 cases / 179,063 checks, with 86 TODOs and
+zero ordinary failures (`ellipse-widen-full-focused.log`).
+
+The unchanged application passes brush activation and reaches canvas rendering.
+Its next E_NOTIMPL is graph initialization for ID2D1OffsetTransform
+(`paintnet-20260912-062129-434011.log`, `pdncrash.43.log`). The earlier ellipse
+run (`paintnet-20260912-061740-431682.log`, `pdncrash.42.log`) exposed the same
+canvas drawing failure. The canvas and an editing session are still unverified.

@@ -14,8 +14,9 @@ WhiteLevelAdjustment, custom image shaders, document-thumbnail rendering, and
 a contained geometry subtraction in ColorRectangleControl. Default-stroke widening
 and path-combination support now also pass that control. Startup
 now passes CompositorController activation with the initial lifecycle support.
-Window feedback configuration now also works. The feature-level query now also passes. Startup currently fails in transformed
-geometry widening while the default brush tool is activated.
+Window feedback configuration now also works. The feature-level query now also passes. Transformed ellipse widening now
+also passes brush activation. Canvas rendering currently fails when initializing
+an offset transform in an effect graph.
 The editor remains unusable, and compositor visual presentation is unimplemented.
 
 Command-list DrawImage replay and source-copy compositing are local prototypes.
@@ -592,3 +593,17 @@ DXVK 3.1 has a measured backend difference: a query-only CreateDeviceContextStat
 promotes the device's reported feature level. Native Windows leaves it unchanged.
 Four TODO assertions record that behavior separately from Direct2D query results.
 Adapters below 11.1 and concurrent cache initialization remain unverified.
+
+## Ellipse and transformed geometry strokes
+
+Ellipse widening now emits a filled stroke outline. Narrow strokes use adaptive
+curve samples and tangent normals; wide strokes combine segment rectangles and
+rounded joins into a filled boundary. A transformed ellipse applies its stored
+transform to the center curve before widening, then applies the caller's world
+transform to the result. Reflection, solid stroke styles, and collapsed inner
+strokes have native reference coverage. No extra rendering pass is involved.
+
+The sampled circle cases match Windows. Nonuniform ellipses still have measured
+flattening and edge-coverage differences, recorded by 51 focused TODO assertions.
+Dashed and degenerate ellipses, nested transforms with custom styles, arbitrary
+open paths, and full geometry-stroke conformance remain incomplete.
