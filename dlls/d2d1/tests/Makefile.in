@@ -35,4 +35,5 @@ SOURCES = \
 	wic_upload.c \
 	widen.c \
 	path_combine.c \
+	primitive_combine.c \
 	opacity_metadata.c

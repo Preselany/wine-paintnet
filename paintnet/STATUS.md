@@ -8,20 +8,30 @@ managed renderer does not count toward this project's compatibility status.
 
 ## Current state — September 12, 2026
 
-The original application reaches the editor in the private Wine test display,
-but the editor is not yet usable. Startup now passes the initial effect metadata,
-COM interfaces, custom image shaders, geometry operations, WIC target creation,
-and overlapping animation scheduling. Two committed memory fixes preserve
-recorded command payloads during buffer growth and keep the correct references
-during concurrent font-collection initialization.
+The original application reaches the editor in the private Wine test display.
+A brush stroke, undo, and redo have now been verified through the actual editor.
+It is still not ready for normal use. All 312 original runtime binaries remain
+unchanged, and these runs use Wine's builtin Direct2D implementation.
 
+Startup passes the initial effect metadata, COM interfaces, custom image
+shaders, WIC target creation, and overlapping animation scheduling. Committed
+memory fixes preserve recorded command payloads during buffer growth and retain
+the correct references during concurrent font-collection initialization.
 The local Gaussian requested-region change removes the Layers-panel infinite
-allocation failure. It remains a prototype with measured blur-edge differences.
-The committed WIC conversion work now passes both directions of the brush's
-floating-point bitmap conversion. The latest brush test instead fails while
-releasing a DirectWrite text-layout object (pdncrash.68.log); its underlying
-memory error remains under investigation. No brush stroke has been successfully
-verified, and saving/reopening is unverified.
+allocation failure, but measured blur-edge differences remain.
+
+The brush-related text-layout memory corruption was traced to rasterizing text
+with extreme coordinates into a logically empty DC target. A local empty-target
+guard avoids that path; DirectWrite's underlying wrapped-coordinate handling
+still needs its own regression and fix. The next toolbar crash was an
+unimplemented primitive geometry combination. Ellipse, rounded-rectangle,
+transformed, and overlapping rectangle combinations now reach the existing
+boolean geometry implementation. Rounded-rectangle simplification also places
+its corners correctly.
+
+Save As opens and reaches PNG encoding. The preview fails in
+`WICMetadataBlockWriter.AddWriter`, called by `PngExifEncoder.CommitExifPropertyItems`.
+No successful saved image or reopen has been verified yet.
 
 Toolbar labels still render incorrectly. Gaussian Blur, glyph replay, layer
 mask edges, and other local rendering prototypes have measured Windows
@@ -752,3 +762,26 @@ converter suite retains its existing 12 format-coverage failures and nine skips.
 The real brush test now passes the previously missing conversions, but crashes
 in DirectWrite text-layout disposal. This remains an unusable-editor result;
 no working draw/save/reopen workflow is claimed.
+
+## Primitive combinations and first editing validation — September 12
+
+Native jobs 156–158 compare 96 primitive combinations: four source types, three
+input types, an optional input transform, and all four boolean operations.
+Previously only 12 succeeded; all 96 now return successful results. Correcting
+rounded-rectangle simplification removes incorrectly placed corner arcs.
+Compared with Windows WARP, 74 cases have identical aliased pixels; 38 edge
+pixels across the other 22 cases still differ and are explicitly tracked as
+TODOs. Maximum finite bounds difference is 0.002288 units and area difference
+is 0.011952 square units with 0.01 flattening tolerance. These tests do not
+establish exact curve or antialiasing equivalence.
+
+The new `primitive_combine` regression performs 56,468 checks on Windows with
+zero failures or skips. Wine reports 56,358 checks plus 110 silenced TODOs,
+with 152 total known TODO failures and no ordinary failures or skips. The full
+48-case focused suite reports 559,308 checks plus those 110 silenced TODOs,
+with 248 total known TODO failures, zero ordinary/flaky failures, and zero skips.
+
+The editor test then draws a diagonal brush stroke, removes it with Undo, and
+restores it with Redo. The subsequent PNG save attempt identifies the missing
+metadata block writer above. Toolbar text rendering, full editing coverage,
+native Linux file dialogs, and hardware performance remain unfinished.
