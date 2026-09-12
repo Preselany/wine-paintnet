@@ -8,6 +8,7 @@ SOURCES = \
 	ddsformat.c \
 	gifformat.c \
 	icoformat.c \
+	half_format.c \
 	info.c \
 	jpegformat.c \
 	metadata.c \

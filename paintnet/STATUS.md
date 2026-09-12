@@ -17,8 +17,10 @@ now passes CompositorController activation with the initial lifecycle support.
 Window feedback configuration now also works. The feature-level query now also passes. Transformed ellipse widening now
 also passes brush activation. Offset transforms now translate effect graph inputs
 without an extra render pass. Local DrawBitmap replay and the Invert effect now
-advance brush initialization to unsupported Gaussian Blur evaluation. A separate
-canvas path also reaches missing command-list glyph replay.
+advance brush initialization through a local Gaussian Blur prototype. Glyph
+replay now also passes History-panel drawing. The Layers panel gets through
+half-float WIC metadata lookup and reaches an unsupported Direct2D WIC bitmap
+upload. Gaussian Blur and glyph replay still have measured Windows differences.
 The editor remains unusable, and compositor visual presentation is unimplemented.
 
 Command-list DrawImage replay and source-copy compositing are local prototypes.

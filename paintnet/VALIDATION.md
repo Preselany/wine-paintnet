@@ -979,3 +979,26 @@ bounds evaluation. The final unsupported input is Gaussian Blur (effect
 `000074CCA4F25220`, CLSID `1feb6d69-2fe6-4ac9-8c58-1d7f93e7a6a5`). The main
 thread separately reports unsupported command 8 (DrawGlyphRun) in a command list.
 The editor remains unusable.
+
+## Half-float WIC format registration — September 12
+
+Wine now registers the 16-bit gray, 48-bit RGB, 64-bit RGBA, and 64-bit
+premultiplied RGBA half-float pixel formats. Native job 114 and Wine agree on
+105 non-name result records covering channel masks, buffer-size behavior,
+numeric representation, transparency, and bitmap storage. Friendly-name
+capitalization differs. The focused `half_format` test passes 197 checks on
+both Windows (job 115) and Wine, including padded multirow storage and cropped
+pixel copying. This registration does not implement format conversion.
+
+The full focused suite passes 34 cases / 181,043 checks, with 86 existing TODO
+failures and zero ordinary failures (`wic-half-full-focused.log`). This run
+includes the local Gaussian Blur and glyph-replay prototypes, but the suite
+does not yet establish their pixel conformance. Native Gaussian probes 109,
+111, and 113 and glyph probe 112 retain measured differences.
+
+The unchanged application's History-panel drawing passes with glyph replay.
+`paintnet-20260912-071132-459411.log` (`pdncrash.48.log`) then fails during
+Layers-panel half-float format metadata lookup. With registration installed,
+`paintnet-20260912-071508-463572.log` (`pdncrash.49.log`) passes that lookup and
+fails at `CreateBitmapFromWicBitmap` for `GUID_WICPixelFormat64bppPRGBAHalf`.
+Direct2D upload support is the next separate change. The editor is still unusable.

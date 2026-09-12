@@ -17,6 +17,9 @@ for module in "$@"; do
     fi
     cp "$built" "$wine_root/lib/wine/x86_64-windows/$module.dll"
     cp "$built" "$WINEPREFIX/drive_c/windows/system32/$module.dll"
+    if [[ "$module" == windowscodecs ]]; then
+        WINEDEBUG=-all "$wine_root/bin/wine" regsvr32 /s windowscodecs.dll
+    fi
     if [[ "$module" == coremessaging ]]; then
         # A full Wine prefix setup imports classes.idl's registry resource.
         # A module-only update also needs the newly introduced runtime class.

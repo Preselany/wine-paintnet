@@ -2434,6 +2434,50 @@ static struct regsvr_pixelformat const pixelformat_list[] = {
         WICPixelFormatNumericRepresentationUnsignedInteger,
         0
     },
+    {   &GUID_WICPixelFormat16bppGrayHalf,
+        "The Wine Project",
+        "16bpp GrayHalf",
+        NULL, /* no version */
+        &GUID_VendorMicrosoft,
+        16, /* bitsperpixel */
+        1, /* channel count */
+        channel_masks_16bit,
+        WICPixelFormatNumericRepresentationFloat,
+        0
+    },
+    {   &GUID_WICPixelFormat48bppRGBHalf,
+        "The Wine Project",
+        "48bpp RGBHalf",
+        NULL, /* no version */
+        &GUID_VendorMicrosoft,
+        48, /* bitsperpixel */
+        3, /* channel count */
+        channel_masks_16bit,
+        WICPixelFormatNumericRepresentationFloat,
+        0
+    },
+    {   &GUID_WICPixelFormat64bppRGBAHalf,
+        "The Wine Project",
+        "64bpp RGBAHalf",
+        NULL, /* no version */
+        &GUID_VendorMicrosoft,
+        64, /* bitsperpixel */
+        4, /* channel count */
+        channel_masks_16bit,
+        WICPixelFormatNumericRepresentationFloat,
+        1
+    },
+    {   &GUID_WICPixelFormat64bppPRGBAHalf,
+        "The Wine Project",
+        "64bpp PRGBAHalf",
+        NULL, /* no version */
+        &GUID_VendorMicrosoft,
+        64, /* bitsperpixel */
+        4, /* channel count */
+        channel_masks_16bit,
+        WICPixelFormatNumericRepresentationFloat,
+        1
+    },
     {   &GUID_WICPixelFormat64bppRGBA,
         "The Wine Project",
         "64bpp RGBA",
