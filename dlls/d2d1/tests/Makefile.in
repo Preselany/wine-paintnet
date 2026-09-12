@@ -26,6 +26,7 @@ SOURCES = \
 	gradient_stops.c \
 	histogram.c \
 	white_level.c \
+	wic_upload.c \
 	widen.c \
 	path_combine.c \
 	opacity_metadata.c

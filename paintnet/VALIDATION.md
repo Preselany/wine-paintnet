@@ -1002,3 +1002,35 @@ Layers-panel half-float format metadata lookup. With registration installed,
 `paintnet-20260912-071508-463572.log` (`pdncrash.49.log`) passes that lookup and
 fails at `CreateBitmapFromWicBitmap` for `GUID_WICPixelFormat64bppPRGBAHalf`.
 Direct2D upload support is the next separate change. The editor is still unusable.
+
+## High-precision WIC bitmap uploads — September 12
+
+Direct2D now uploads 64-bit integer RGBA, 64-bit half-float RGBA, and 128-bit
+float RGBA WIC bitmaps. It inherits premultiplication metadata and accepts
+explicit premultiplied/ignore-alpha overrides for straight-alpha sources, as
+measured on Windows. Incompatible DXGI views return E_INVALIDARG. Compatible
+sRGB views of 8-bit sources remain supported, and RGB sources reject alpha
+modes that require a stored alpha channel. The allocation check also prevents
+32-bit total-byte-count overflow before CopyPixels.
+
+Native job 116 covers 200 upload cases. All status, metadata, and raw bytes
+match Wine; maximum sampled pixel difference is 1.5e-8. Expanded job 118 adds
+RGB and sRGB cases (312 total). Every status, metadata, and raw-byte record
+matches. Four sRGB rendering cases differ by up to 0.000727 in a float channel,
+consistent with the current llvmpipe texture-decoding approximation. This
+change does not claim exact sRGB rendering. The regression uses 0.001 absolute
+tolerance for sRGB decoding, 0.000001 otherwise, and exact raw-byte comparisons.
+
+The focused regression also modifies and releases each WIC source after upload
+to check that the GPU bitmap owns its pixel copy. Windows job 120 and Wine each
+pass 10,246 checks across feature levels 11.0 and 10.0. The earlier stricter
+sRGB comparison exposed 80 Wine pixel differences; they are accounted for by
+the explicit sRGB tolerance, rather than described as fixed. The full suite
+passes 35 cases / 191,289 checks with 86 existing TODO failures and zero ordinary
+failures (`wic-upload-full-focused.log`).
+
+All 312 original Paint.NET binaries remain unchanged. The Layers-panel upload
+now succeeds. `paintnet-20260912-072935-469719.log` (`pdncrash.50.log`) instead
+fails on command 20 (PushLayer) while obtaining command-list bounds. Drawing
+layers and final compositor presentation are still missing; the editor remains
+unusable.

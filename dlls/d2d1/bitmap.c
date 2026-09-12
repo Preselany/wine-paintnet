@@ -716,6 +716,12 @@ HRESULT d2d_bitmap_create_from_wic_bitmap(struct d2d_device_context *context, IW
         {&GUID_WICPixelFormat32bppPRGBA, {DXGI_FORMAT_R8G8B8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED}},
         {&GUID_WICPixelFormat32bppBGR,   {DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_IGNORE}},
         {&GUID_WICPixelFormat32bppRGB,   {DXGI_FORMAT_R8G8B8A8_UNORM, D2D1_ALPHA_MODE_IGNORE}},
+        {&GUID_WICPixelFormat64bppPRGBA, {DXGI_FORMAT_R16G16B16A16_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED}},
+        {&GUID_WICPixelFormat64bppRGBA,  {DXGI_FORMAT_R16G16B16A16_UNORM, D2D1_ALPHA_MODE_STRAIGHT}},
+        {&GUID_WICPixelFormat64bppPRGBAHalf, {DXGI_FORMAT_R16G16B16A16_FLOAT, D2D1_ALPHA_MODE_PREMULTIPLIED}},
+        {&GUID_WICPixelFormat64bppRGBAHalf,  {DXGI_FORMAT_R16G16B16A16_FLOAT, D2D1_ALPHA_MODE_STRAIGHT}},
+        {&GUID_WICPixelFormat128bppPRGBAFloat, {DXGI_FORMAT_R32G32B32A32_FLOAT, D2D1_ALPHA_MODE_PREMULTIPLIED}},
+        {&GUID_WICPixelFormat128bppRGBAFloat,  {DXGI_FORMAT_R32G32B32A32_FLOAT, D2D1_ALPHA_MODE_STRAIGHT}},
     };
 
     if (FAILED(hr = IWICBitmapSource_GetSize(bitmap_source, &size.width, &size.height)))
@@ -759,16 +765,37 @@ HRESULT d2d_bitmap_create_from_wic_bitmap(struct d2d_device_context *context, IW
         return D2DERR_UNSUPPORTED_PIXEL_FORMAT;
     }
 
-    if (bitmap_desc.pixelFormat.format == DXGI_FORMAT_UNKNOWN)
-        bitmap_desc.pixelFormat.format = d2d_format->format;
     if (bitmap_desc.pixelFormat.alphaMode == D2D1_ALPHA_MODE_UNKNOWN)
         bitmap_desc.pixelFormat.alphaMode = d2d_format->alphaMode;
+    if (d2d_format->alphaMode == D2D1_ALPHA_MODE_IGNORE
+            && bitmap_desc.pixelFormat.alphaMode != D2D1_ALPHA_MODE_IGNORE)
+        return D2DERR_UNSUPPORTED_PIXEL_FORMAT;
+
+    if (bitmap_desc.pixelFormat.format == DXGI_FORMAT_UNKNOWN)
+        bitmap_desc.pixelFormat.format = d2d_format->format;
+    else if (bitmap_desc.pixelFormat.format != d2d_format->format
+            && !(bitmap_desc.pixelFormat.format == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
+                && d2d_format->format == DXGI_FORMAT_B8G8R8A8_UNORM)
+            && !(bitmap_desc.pixelFormat.format == DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
+                && d2d_format->format == DXGI_FORMAT_R8G8B8A8_UNORM))
+        return E_INVALIDARG;
 
     switch (bitmap_desc.pixelFormat.format)
     {
         case DXGI_FORMAT_B8G8R8A8_UNORM:
         case DXGI_FORMAT_R8G8B8A8_UNORM:
+        case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+        case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
             bpp = 4;
+            break;
+
+        case DXGI_FORMAT_R16G16B16A16_UNORM:
+        case DXGI_FORMAT_R16G16B16A16_FLOAT:
+            bpp = 8;
+            break;
+
+        case DXGI_FORMAT_R32G32B32A32_FLOAT:
+            bpp = 16;
             break;
 
         default:
@@ -777,7 +804,7 @@ HRESULT d2d_bitmap_create_from_wic_bitmap(struct d2d_device_context *context, IW
     }
 
     pitch = ((bpp * size.width) + 15) & ~15;
-    if (pitch / bpp < size.width)
+    if (pitch / bpp < size.width || (size.height && pitch > UINT_MAX / size.height))
         return E_OUTOFMEMORY;
     if (!(data = calloc(size.height, pitch)))
         return E_OUTOFMEMORY;
