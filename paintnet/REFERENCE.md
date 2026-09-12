@@ -320,3 +320,16 @@ that incomplete-shutdown diagnostic.
 API documentation: [GetForCurrentThread](https://learn.microsoft.com/en-us/uwp/api/windows.system.dispatcherqueue.getforcurrentthread),
 [ShutdownQueueAsync](https://learn.microsoft.com/en-us/uwp/api/windows.system.dispatcherqueuecontroller.shutdownqueueasync),
 and [CreateDispatcherQueueController](https://learn.microsoft.com/en-us/windows/win32/api/dispatcherqueue/nf-dispatcherqueue-createdispatcherqueuecontroller).
+
+## Animation keyframes
+
+animation-keyframe-reference.exe measures finite/indefinite repetition, zero
+iterations, delayed and stretched transitions, keyframes after transitions,
+loop tails, Conclude, elapsed time, and validation. The focused keyframes case
+in uianimation_test.exe contains the native-derived numerical fixtures; run the
+same test executable against system UIAnimation on Windows and the fork on Wine.
+No Wine module should be copied into the Windows reference machine.
+
+API documentation: [Storyboard construction](https://learn.microsoft.com/en-us/windows/win32/uianimation/storyboard-construction),
+[AddKeyframeAtOffset](https://learn.microsoft.com/en-us/windows/win32/api/uianimation/nf-uianimation-iuianimationstoryboard-addkeyframeatoffset),
+and [RepeatBetweenKeyframes](https://learn.microsoft.com/en-us/windows/win32/api/uianimation/nf-uianimation-iuianimationstoryboard-repeatbetweenkeyframes).

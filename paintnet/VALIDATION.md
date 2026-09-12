@@ -698,3 +698,37 @@ The complete nineteen-case focused suite passes 107,341 checks, zero failures,
 and one existing animation todo (queue-focused.log). The module installation
 script refreshes the new WinRT class in the isolated prefix; shell syntax and
 reference-log comparisons pass.
+
+## Animation keyframes and repeating timelines
+
+Native logs 054-animation-keyframes--keyframes.log and
+055-animation-keyframe-errors--keyframes.log measure nine timelines, 225 frames,
+and keyframe validation. The final Wine prototype matches all 358 labeled
+records exactly (animation-keyframes-validation.log), including variable values,
+final values, elapsed time, effective durations, status, change flags, Conclude,
+and post-scheduling sealing. Zero iterations skip the loop; count one plays it
+once; count two wraps once. Numeric keyframe zero is valid after allocation.
+
+The keyframes regression converts these measurements to 2,182 assertions. The
+Wine run passes without failures, todos, or skips (keyframes-tests-first.log).
+The existing timeline suite still passes 2,114 checks, and the older 14-check
+UIAnimation case retains its one pre-existing todo. Multiple simultaneous loops
+and general overlapping transitions remain unverified/unsupported.
+
+The application run paintnet-20260912-032523-338752.log again verifies all 312
+original binaries and passes busy-spinner setup. Crash pdncrash.28.log reports
+an unsupported gradient-stop interface while painting ZoomSliderControl.
+The trace identifies IID_ID2D1GradientStopCollection1
+(ae1572f4-5dd0-4777-998b-9279472ae63b) on a legacy-created collection.
+Command rendering and Color Management prototypes are still in the working
+runtime; no editing, saved-image correctness, or GPU performance is claimed.
+
+The identical keyframes test passes all 2,182 assertions on native Windows
+(056-keyframes-tests--keyframes-tests.log). A combined run exposed a dispatcher
+reference-count race: retaining the queue itself during callback execution
+made its observable count one higher. Dispatch now retains the controller,
+which owns the queue, and the regression waits until the callback is running
+before checking its count. That strengthened test passes 227 checks on Windows
+and Wine (057-queue-dispatch-lifetime--queue-tests.log). The final twenty-case
+suite passes 109,524 checks, zero failures, with one existing animation todo
+(keyframes-queue-focused.log).

@@ -10,8 +10,8 @@ managed renderer does not count toward this project's compatibility status.
 
 The editor is not yet usable. The local working tree now passes the color-icon
 render and window creation, reaching creation of the first blank document.
-Startup then fails on UIAnimation.AddKeyframeAfterTransition while setting up
-the busy spinner. This run includes uncommitted command-list rasterization and
+Startup passes the busy-spinner animation and now fails when the zoom slider
+requests ID2D1GradientStopCollection1 from a legacy gradient-stop collection. This run includes uncommitted command-list rasterization and
 Color Management prototypes; the latter still has ICC discrepancies, and
 primitive antialiasing/stroke rendering also needs correction. CoreMessaging
 queues now have native-verified callbacks, priorities, identity, and shutdown.
@@ -410,6 +410,27 @@ With the uncommitted rendering prototypes, the unchanged application now passes
 display-aware window creation and fails at the spinner animation keyframe API.
 This is progress through startup, not a successful editor session.
 
+## Animation keyframes and loops
+
+UIAnimation now resolves keyframes at offsets and after transitions, places
+transitions at/between those keyframes, and evaluates a finite or indefinite
+loop without allocating repeated transitions. Conclude ends the current loop
+iteration; elapsed time tracks the full timeline while sampled values wrap.
+Delayed transitions remain Scheduled until their first transition begins.
+Keyframe handles are measured numeric indices, including a valid zero handle.
+
+A native reference covers nine timelines and 225 frames, including zero/one/two
+iterations, indefinite loops, delayed starts, partial-transition loops, a tail
+after a loop, and stretched transitions. All 358 reference records match,
+including validation errors. The focused test passes 2,182 checks on both Windows and Wine.
+The complete twenty-case suite passes 109,524 checks with one existing todo. Multiple loops in one
+storyboard, general overlapping transitions, and remaining UIAnimation methods
+are still outside this implementation's verified coverage.
+
+The unchanged application passes busy-spinner setup and now fails while the
+zoom slider requests ID2D1GradientStopCollection1. Rendering prototypes remain
+uncommitted, and there is still no successful editing session.
+
 ## Observed remaining failures
 
 * The Color Management effect (`CLSID_D2D1ColorManagement`) is not implemented.
@@ -417,8 +438,8 @@ This is progress through startup, not a successful editor session.
 * Retest Paint.NET's device feature probe after its effect-category initializer
   can finish. The EffectContext1 regression passes independently.
 * Missing `dcomp.dll!CreatePresentationFactory`, observed during diagnostics.
-* UIAnimation keyframes and repeating storyboards fail during initial blank-document
-  creation. DispatcherQueue activation and its callback path now work.
+* ID2D1GradientStopCollection1 is unavailable on legacy gradient collections;
+  painting the zoom slider raises an interface error.
 * The broader Direct2D drawing/effect pipeline, animation, and composition
   requirements still need investigation and rendering tests.
 
