@@ -96,7 +96,7 @@ struct d2d_brush_cb
         {
             D2D1_POINT_2F start;
             D2D1_POINT_2F end;
-            unsigned int stop_count;
+            unsigned int extend_mode;
         } linear;
         struct
         {
@@ -104,7 +104,7 @@ struct d2d_brush_cb
             D2D1_POINT_2F offset;
             D2D1_POINT_2F ra;
             D2D1_POINT_2F rb;
-            unsigned int stop_count;
+            unsigned int extend_mode;
             float pad[3];
         } radial;
         struct
@@ -310,7 +310,13 @@ HRESULT d2d_bitmap_render_target_init(struct d2d_bitmap_render_target *render_ta
 
 struct d2d_gradient
 {
-    ID2D1GradientStopCollection ID2D1GradientStopCollection_iface;
+    union
+    {
+        ID2D1GradientStopCollection ID2D1GradientStopCollection_iface;
+        ID2D1GradientStopCollection1 ID2D1GradientStopCollection1_iface;
+    };
+    D2D1_GAMMA gamma;
+    D2D1_EXTEND_MODE extend_mode;
     LONG refcount;
 
     ID2D1Factory *factory;

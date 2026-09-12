@@ -749,3 +749,29 @@ suite passes 109,524 checks, zero failures, with one existing animation todo
   missing-property getter now clears the caller buffer, as the native probe
   demonstrates for absent minimum/maximum metadata.
 - Reference API: https://learn.microsoft.com/en-us/windows/win32/api/d2d1effects_2/ne-d2d1effects_2-d2d1_whiteleveladjustment_prop
+
+## Versioned legacy gradient collections and ramps — September 12, 2026
+
+- Native job 058 / Wine `gradient-stops-clamp.log`: all 108 metadata/API
+  records match. Gamma 2.2 pixels in all six color/extend combinations match
+  within 1.2e-7. Gamma 1.0 has residual quantization differences up to one
+  8-bit step; the focused test retains the Windows values and permits that
+  explicitly documented bound for gamma 1.0 only.
+- Native job 062 / Wine `gradient-stops-tests.log`: 1,303 checks, zero failures.
+  Tests cover COM identity, stored gamma/extend, versioned color spaces,
+  converted stop values, untouched trailing elements, and float target pixels.
+- Native jobs 059/060 vary the gradient length, world scale, and DPI. Legacy
+  ramps use power-of-two tables with two border texels in clamp mode; scale
+  and DPI affect the selected resolution. The renderer caches levels 4–1024
+  in an 8,176-byte GPU buffer and reads two entries per pixel.
+- Native job 064 / Wine `gradient-stops-radial.log`: the tested radial wrap
+  and mirror cases match within 6.1e-8 at gamma 2.2; radial clamp still differs
+  by up to 0.005576 (and up to 0.009437 at gamma 1.0). Radial ramp selection
+  and gamma quantization remain open, as do broader transformed/radial cases.
+- Broad Direct2D test: 17,157 checks, 237 todos, one skip, and the same two
+  previously recorded unexpected todo successes at d2d1.c:15659. No new
+  ordinary failures (`d2d1-suite-white-gradient-verified.log`). A first wrapper
+  run was invalidated by editing the script while Bash was reading it; the
+  reported repeat invokes the test executable directly after all script edits.
+- App run `paintnet-20260912-034647-347428.log` passes the zoom-slider interface
+  request and reaches the formerly missing WhiteLevelAdjustment effect.

@@ -467,3 +467,12 @@ Rendering multiplies RGB by InputWhiteLevel / OutputWhiteLevel and preserves the
 stored alpha. The pixel-shader path supports feature level 10 and avoids CPU
 readback. The Windows reference probe and focused regression cover metadata,
 zero and negative levels, HDR values, and premultiplied/ignored-alpha inputs.
+
+## Legacy gradient collections
+
+Legacy-created collections now expose ID2D1GradientStopCollection1 with the
+same COM identity, retained gamma/extend settings, and native stop conversion
+and color-space metadata. Linear and radial brushes now use premultiplied,
+8-bit color ramps and honor gamma and clamp/wrap/mirror modes. The standard
+linear probe matches Windows for gamma 2.2. Gamma-1 quantization and radial
+clamp differences remain measured limitations; see VALIDATION.md.

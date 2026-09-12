@@ -16,6 +16,7 @@ SOURCES = \
 	effect_node.c \
 	emboss.c \
 	opacity.c \
+	gradient_stops.c \
 	histogram.c \
 	white_level.c \
 	opacity_metadata.c
