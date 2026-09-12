@@ -807,3 +807,21 @@ expected pixel arrays are retained in the test; tolerance is 1e-6. Source-only
 draw_transform (75,824 checks) and wrapped effect_node (222 checks) also pass.
 This does not validate arbitrary multi-input shaders, mipmap realization,
 expanded-region propagation, or completed application rendering.
+
+## Contained geometry combination validation — September 12
+
+Native reference 072 covers rectangles, a concave polygon, and an ellipse with
+and without an input transform, across all four combination modes. All 24
+cases match HRESULTs, bounds, and 13,824 aliased RGBA samples exactly. Twenty-one
+areas match; the untransformed ellipse intersection differs by 0.7012768 in
+area, with the same difference in exclusion and XOR. These inherited flattening
+differences are explicit todos, not relaxed tolerances.
+
+The focused contained_combine regression executes 14,126 checks on both Wine
+and native Windows/WARP (job 073). Wine has three todo failures, no ordinary
+failures, and no skipped cases; native has no failures. The actual Paint.NET
+retest, pdncrash.34.log, passes the ColorRectangleControl subtraction and fails
+on Widen(strokeWidth=2, strokeStyle=NULL). All original runtime binaries pass
+the integrity check.
+
+The complete focused suite then passed 25 test cases and 147,321 checks, with six recorded todo failures and no ordinary failures (contained-full-focused.log).

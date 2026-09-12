@@ -5377,14 +5377,78 @@ static HRESULT STDMETHODCALLTYPE d2d_rectangle_geometry_Tessellate(ID2D1Rectangl
     return d2d_geometry_tessellate(&geometry->ID2D1Geometry_iface, transform, tolerance, sink);
 }
 
+/* A contained shape needs no edge intersections: union and intersection select
+ * one operand, while exclusion toggles an alternate-filled hole in the rectangle. */
+static HRESULT d2d_rectangle_combine_contained(struct d2d_geometry *rectangle, ID2D1Geometry *input,
+        D2D1_COMBINE_MODE mode, const D2D1_MATRIX_3X2_F *transform, float tolerance,
+        ID2D1SimplifiedGeometrySink *sink)
+{
+    ID2D1PathGeometry *path;
+    ID2D1GeometrySink *collector;
+    struct d2d_geometry *inner;
+    D2D1_RECT_F bounds;
+    const D2D1_RECT_F *outer = &rectangle->u.rectangle.rect;
+    D2D1_POINT_2F corners[4];
+    size_t i;
+    HRESULT hr;
+
+    if (!input || !sink || mode > D2D1_COMBINE_MODE_EXCLUDE) return E_INVALIDARG;
+    if (FAILED(hr = ID2D1Factory_CreatePathGeometry(rectangle->factory, &path))) return hr;
+    if (FAILED(hr = ID2D1PathGeometry_Open(path, &collector))) goto done;
+    hr = ID2D1Geometry_Simplify(input, D2D1_GEOMETRY_SIMPLIFICATION_OPTION_LINES,
+            transform, tolerance, (ID2D1SimplifiedGeometrySink *)collector);
+    if (SUCCEEDED(hr)) hr = ID2D1GeometrySink_Close(collector);
+    ID2D1GeometrySink_Release(collector);
+    if (FAILED(hr)) goto done;
+    if (FAILED(hr = ID2D1PathGeometry_GetBounds(path, NULL, &bounds))) goto done;
+    if (bounds.left < outer->left || bounds.top < outer->top
+            || bounds.right > outer->right || bounds.bottom > outer->bottom)
+    {
+        FIXME("Combination needs edge intersections: outer %s, input %s.\n",
+                debug_d2d_rect_f(outer), debug_d2d_rect_f(&bounds));
+        hr = E_NOTIMPL;
+        goto done;
+    }
+    inner = unsafe_impl_from_ID2D1Geometry((ID2D1Geometry *)path);
+    if ((mode == D2D1_COMBINE_MODE_EXCLUDE || mode == D2D1_COMBINE_MODE_XOR)
+            && inner->u.path.fill_mode != D2D1_FILL_MODE_ALTERNATE)
+    {
+        hr = E_NOTIMPL;
+        goto done;
+    }
+    ID2D1SimplifiedGeometrySink_SetFillMode(sink, mode == D2D1_COMBINE_MODE_INTERSECT
+            ? inner->u.path.fill_mode : D2D1_FILL_MODE_ALTERNATE);
+    ID2D1SimplifiedGeometrySink_SetSegmentFlags(sink, D2D1_PATH_SEGMENT_NONE);
+    if (mode != D2D1_COMBINE_MODE_INTERSECT)
+    {
+        corners[0] = (D2D1_POINT_2F){outer->left, outer->top};
+        corners[1] = (D2D1_POINT_2F){outer->right, outer->top};
+        corners[2] = (D2D1_POINT_2F){outer->right, outer->bottom};
+        corners[3] = (D2D1_POINT_2F){outer->left, outer->bottom};
+        ID2D1SimplifiedGeometrySink_BeginFigure(sink, corners[0], D2D1_FIGURE_BEGIN_FILLED);
+        ID2D1SimplifiedGeometrySink_AddLines(sink, &corners[1], 3);
+        ID2D1SimplifiedGeometrySink_EndFigure(sink, D2D1_FIGURE_END_CLOSED);
+    }
+    if (mode != D2D1_COMBINE_MODE_UNION)
+        for (i = 0; i < inner->u.path.figure_count; ++i)
+            d2d_figure_simplify(&inner->u.path.figures[i], D2D1_GEOMETRY_SIMPLIFICATION_OPTION_LINES,
+                    NULL, tolerance, sink);
+    hr = S_OK;
+done:
+    ID2D1PathGeometry_Release(path);
+    return hr;
+}
+
 static HRESULT STDMETHODCALLTYPE d2d_rectangle_geometry_CombineWithGeometry(ID2D1RectangleGeometry *iface,
         ID2D1Geometry *geometry, D2D1_COMBINE_MODE combine_mode, const D2D1_MATRIX_3X2_F *transform,
         float tolerance, ID2D1SimplifiedGeometrySink *sink)
 {
-    FIXME("iface %p, geometry %p, combine_mode %#x, transform %p, tolerance %.8e, sink %p stub!\n",
+    struct d2d_geometry *rectangle = impl_from_ID2D1RectangleGeometry(iface);
+
+    TRACE("iface %p, geometry %p, combine_mode %#x, transform %p, tolerance %.8e, sink %p\n",
             iface, geometry, combine_mode, transform, tolerance, sink);
 
-    return E_NOTIMPL;
+    return d2d_rectangle_combine_contained(rectangle, geometry, combine_mode, transform, tolerance, sink);
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_rectangle_geometry_Outline(ID2D1RectangleGeometry *iface,

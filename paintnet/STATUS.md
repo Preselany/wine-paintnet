@@ -10,10 +10,13 @@ managed renderer does not count toward this project's compatibility status.
 
 The editor is not yet usable. The local working tree passes color-icon rendering,
 window creation, the busy-spinner animation, zoom-slider gradient setup,
-WhiteLevelAdjustment, custom image-shader setup, and document-thumbnail graph
-validation. The latest startup failure is command-list replay of DrawImage in
-DocumentStrip. That path also requests bounded source-copy compositing, which
-Wine currently ignores. Both drawing features are under development.
+WhiteLevelAdjustment, custom image shaders, document-thumbnail rendering, and
+a contained geometry subtraction in ColorRectangleControl. Startup now fails
+at ID2D1Geometry::Widen with a two-pixel stroke and the default stroke style.
+
+Command-list DrawImage replay and source-copy compositing are local prototypes.
+Their 96-DPI image cases largely match Windows, but higher-DPI and fractional
+sampling differences remain; they are not presented as finished rendering work.
 
 These runs include command-list rasterization, Color Management, and gradient
 rendering work. ICC conversion and primitive antialiasing/strokes still have
@@ -505,3 +508,16 @@ separate native validation. More than one requested mip level remains
 unimplemented; MapOutputRectToInputRects requests do not yet drive upstream
 realization. Unbounded or expanded input regions and sampler caching remain
 work to do. The source-only shader regression still passes.
+
+## Contained rectangle geometry combinations
+
+Rectangle CombineWithGeometry now handles an input whose simplified bounds are
+contained by the rectangle. Union returns the rectangle; intersection returns
+the contained geometry. Exclusion and XOR add the contained alternate-filled
+contours as holes. The implementation emits real geometry into the caller's
+sink and preserves the requested input transform and flattening tolerance.
+
+Cases requiring edge intersections and winding-filled subtraction remain
+unimplemented. Curve flattening still differs from Windows in three measured
+area cases, although the sampled aliased pixels match. Paint.NET advances
+from CombineWithGeometry to its next missing Widen call.

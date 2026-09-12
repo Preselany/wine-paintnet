@@ -9,6 +9,7 @@ SOURCES = \
 	command_list_state.c \
 	color_context.c \
 	convolve_matrix.c \
+	contained_combine.c \
 	d2d1.c \
 	draw_transform.c \
 	draw_input.c \
