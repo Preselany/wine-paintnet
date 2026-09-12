@@ -704,7 +704,7 @@
 @ stdcall GetWindowDisplayAffinity(long ptr) NtUserGetWindowDisplayAffinity
 @ stdcall GetWindowDpiAwarenessContext(long)
 @ stdcall GetWindowDpiHostingBehavior(long)
-# @ stub GetWindowFeedbackSetting
+@ stdcall GetWindowFeedbackSetting(long long long ptr ptr)
 @ stdcall GetWindowInfo(long ptr)
 @ stdcall GetWindowLongA(long long)
 @ stdcall -arch=win64 GetWindowLongPtrA(long long)
@@ -1108,7 +1108,7 @@
 # @ stub SetWindowCompositionTransition
 @ stdcall SetWindowContextHelpId(long long) NtUserSetWindowContextHelpId
 @ stdcall SetWindowDisplayAffinity(long long)
-# @ stub SetWindowFeedbackSetting
+@ stdcall SetWindowFeedbackSetting(long long long long ptr)
 @ stdcall SetWindowLongA(long long long)
 @ stdcall -arch=win64 SetWindowLongPtrA(long long long)
 @ stdcall -arch=win64 SetWindowLongPtrW(long long long)

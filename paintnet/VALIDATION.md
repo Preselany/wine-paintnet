@@ -875,3 +875,18 @@ round trips and releases. No visual presentation is claimed by these tests.
 Paint.NET run `paintnet-20260912-053507-400701.log` passes controller setup and
 then fails during ScrollableCanvasControl creation because user32 does not
 export SetWindowFeedbackSetting (`pdncrash.39.log`).
+
+## Window feedback configuration — September 12, 2026
+
+Native probes 083–086 measure feedback settings, inheritance, resets, normalized
+nonzero BOOLs, accepted types, invalid arguments, output buffer behavior,
+GetLastError preservation, destroyed HWNDs, and FEEDBACK_MAX. The standalone
+stock-Wine baseline reports missing exports. The focused `feedback` regression
+passes 936 checks on Wine and native Windows job 088 with zero failures.
+
+After replacing the isolated user32 module, the full focused suite runs 29
+cases and 176,905 checks with 31 TODO failures and zero ordinary failures
+(`feedback-full-focused.log`). Paint.NET advances past feedback configuration
+and fails at GetMaximumSupportedFeatureLevel during canvas initialization
+(`paintnet-20260912-054455-414605.log`, `pdncrash.40.log`). Visual presentation
+and editing remain unverified.

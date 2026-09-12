@@ -14,7 +14,8 @@ WhiteLevelAdjustment, custom image shaders, document-thumbnail rendering, and
 a contained geometry subtraction in ColorRectangleControl. Default-stroke widening
 and path-combination support now also pass that control. Startup
 now passes CompositorController activation with the initial lifecycle support.
-Canvas creation then fails on the missing user32 SetWindowFeedbackSetting export.
+Window feedback configuration now also works. Startup currently fails in
+ID2D1EffectContext::GetMaximumSupportedFeatureLevel while the canvas initializes.
 The editor remains unusable, and compositor visual presentation is unimplemented.
 
 Command-list DrawImage replay and source-copy compositing are local prototypes.
@@ -568,3 +569,13 @@ This is lifecycle infrastructure. Sprite visuals, targets, surface brushes, and
 actual swap-chain presentation still return E_NOTIMPL or lack their interfaces.
 GetIids advertises only implemented interfaces; native Windows has many more.
 The application advances to canvas creation without having presented its canvas.
+
+## Window feedback configuration
+
+user32 exports SetWindowFeedbackSetting and GetWindowFeedbackSetting. Settings
+are stored per HWND, support parent-chain lookup and reset, normalize BOOL
+values, validate buffers and flags, and disappear with the window. Native tests
+cover unset values, size-only queries, invalid windows, all 13 accepted types,
+and the FEEDBACK_MAX sentinel, which Windows accepts without changing settings.
+This implements configuration storage; it does not add Wine touch-feedback
+visual effects. Paint.NET uses it to disable feedback on its canvas.

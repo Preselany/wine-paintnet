@@ -22,6 +22,7 @@ SOURCES = \
 	dialog.c \
 	edit.c \
 	exticon.c \
+	feedback.c \
 	hook.c \
 	icontitle.c \
 	input.c \

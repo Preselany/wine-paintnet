@@ -6,7 +6,7 @@ work_root="$(realpath -m -- "${1:-$here/work}")"
 if [[ $# -gt 0 ]]; then shift; fi
 mkdir -p "$work_root/build" "$work_root/logs"
 docker build -t paintnet-classic-builder:ubuntu24.04 "$here"
-if [[ $# == 0 ]]; then set -- dlls/d2d1/all dlls/d2d1/tests/all dlls/uianimation/all dlls/uianimation/tests/all dlls/wined3d/all dlls/d3dcompiler_47/tests/all dlls/coremessaging/all dlls/coremessaging/tests/all dlls/dcomp/all dlls/dcomp/tests/all; fi
+if [[ $# == 0 ]]; then set -- dlls/d2d1/all dlls/d2d1/tests/all dlls/uianimation/all dlls/uianimation/tests/all dlls/wined3d/all dlls/d3dcompiler_47/tests/all dlls/coremessaging/all dlls/coremessaging/tests/all dlls/dcomp/all dlls/dcomp/tests/all dlls/user32/all dlls/user32/tests/all; fi
 docker run --rm --user "$(id -u):$(id -g)" \
     -v "$source_root:$source_root" -v "$work_root:$work_root" -w "$work_root/build" \
     -e SOURCE_ROOT="$source_root" -e BUILD_JOBS="${BUILD_JOBS:-4}" \
