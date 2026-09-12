@@ -1,0 +1,5 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
+#pragma makedep register
+#pragma winrt ns_prefix
+import "windows.ui.composition.core.idl";
+namespace Windows.UI.Composition.Core { runtimeclass CompositorController; }

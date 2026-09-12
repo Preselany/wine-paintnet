@@ -857,3 +857,21 @@ The complete focused suite after both geometry changes runs 27 cases and
 (`geometry-full-focused.log`). The unchanged Paint.NET startup advances to
 CompositorController activation. Editor interactions and final presentation
 remain unverified.
+
+## Composition controller lifecycle — September 12, 2026
+
+Native probe 081 establishes dispatcher-required activation (E_ACCESSDENIED
+without a queue), stable compositor identity, event retention/coalescing, empty
+commit, deferred completion, and RO_E_CLOSED after Close. The Wine probe matches
+all exercised HRESULTs, names, trust levels, event calls, and handler references.
+Its GetIids lists are shorter because most composition interfaces remain absent.
+Probe 080 had a truncated class-name string and is not valid activation evidence.
+
+The focused `composition` regression passes 103 checks on native Windows job
+082 and 66 checks on Wine, both with zero failures. The count differs because
+the test queries every interface advertised by GetIids. It also verifies color
+round trips and releases. No visual presentation is claimed by these tests.
+
+Paint.NET run `paintnet-20260912-053507-400701.log` passes controller setup and
+then fails during ScrollableCanvasControl creation because user32 does not
+export SetWindowFeedbackSetting (`pdncrash.39.log`).

@@ -24,4 +24,9 @@ for module in "$@"; do
             'HKLM\Software\Microsoft\WindowsRuntime\ActivatableClassId\Windows.System.DispatcherQueue' \
             /v DllPath /t REG_SZ /d 'C:\windows\system32\coremessaging.dll' /f
     fi
+    if [[ "$module" == dcomp ]]; then
+        WINEDEBUG=-all "$wine_root/bin/wine" reg add \
+            'HKLM\Software\Microsoft\WindowsRuntime\ActivatableClassId\Windows.UI.Composition.Core.CompositorController' \
+            /v DllPath /t REG_SZ /d 'C:\windows\system32\dcomp.dll' /f
+    fi
 done

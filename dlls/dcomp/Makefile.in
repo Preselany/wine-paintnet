@@ -1,6 +1,11 @@
 MODULE    = dcomp.dll
+IMPORTS   = combase user32 propsys ole32
 
 VER_PRODUCTVERSION = 10,0,14393,0
 
 SOURCES = \
+	async.c \
+	async_private.idl \
+	classes.idl \
+	composition.c \
 	device.c

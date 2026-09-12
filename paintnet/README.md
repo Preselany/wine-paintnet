@@ -40,7 +40,7 @@ pinned by SHA-256; the application manifest is checked before each launch.
 ```sh
 ./paintnet/setup.sh /absolute/path/to/work
 ./paintnet/build.sh /absolute/path/to/work
-./paintnet/install-modules.sh /absolute/path/to/work d2d1 uianimation wined3d coremessaging
+./paintnet/install-modules.sh /absolute/path/to/work d2d1 uianimation wined3d coremessaging dcomp
 DISPLAY=:93 ./paintnet/test.sh /absolute/path/to/work
 DISPLAY=:93 ./paintnet/test-upload.sh /absolute/path/to/work
 DISPLAY=:93 ./paintnet/run.sh /absolute/path/to/work /absolute/path/to/image.png

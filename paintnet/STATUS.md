@@ -13,8 +13,9 @@ window creation, the busy-spinner animation, zoom-slider gradient setup,
 WhiteLevelAdjustment, custom image shaders, document-thumbnail rendering, and
 a contained geometry subtraction in ColorRectangleControl. Default-stroke widening
 and path-combination support now also pass that control. Startup
-currently fails activating Windows.UI.Composition.Core.CompositorController
-(CLASS_E_CLASSNOTAVAILABLE). The editor remains unusable.
+now passes CompositorController activation with the initial lifecycle support.
+Canvas creation then fails on the missing user32 SetWindowFeedbackSetting export.
+The editor remains unusable, and compositor visual presentation is unimplemented.
 
 Command-list DrawImage replay and source-copy compositing are local prototypes.
 Their 96-DPI image cases largely match Windows, but higher-DPI and fractional
@@ -553,3 +554,17 @@ concave polygons, ellipses, and a primary path containing a hole. All sampled
 pixels match. Ellipse flattening still produces bounds and area differences,
 tracked by 20 focused TODO assertions. Arbitrary complex topology and exact
 curve conformance remain work in progress.
+
+## Composition controller lifecycle
+
+Wine can now activate CompositorController on a thread with a DispatcherQueue,
+return its associated compositor, retain CommitNeeded subscriptions, coalesce
+dirty changes, commit empty state, and complete a queued asynchronous commit
+barrier. Closing the controller releases subscriptions and rejects later calls
+with RO_E_CLOSED. Color brushes store and return their color and mark the state
+dirty. Rejected queue callbacks complete pending actions with a closed error.
+
+This is lifecycle infrastructure. Sprite visuals, targets, surface brushes, and
+actual swap-chain presentation still return E_NOTIMPL or lack their interfaces.
+GetIids advertises only implemented interfaces; native Windows has many more.
+The application advances to canvas creation without having presented its canvas.

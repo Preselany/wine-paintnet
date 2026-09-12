@@ -6,7 +6,7 @@ if [[ $# -gt 0 ]]; then shift; fi
 python3 "$here/verify-app.py" "$work_root"
 export WINEPREFIX="$work_root/prefix"
 export WINEDEBUG="${WINEDEBUG:--all,+timestamp,+d2d,+loaddll}"
-export WINEDLLOVERRIDES='d2d1=b;uianimation=b;wined3d=b;d3dcompiler_47=b;d3d11=n;d3d10core=n;dxgi=n;mshtml='
+export WINEDLLOVERRIDES='dcomp=b;coremessaging=b;d2d1=b;uianimation=b;wined3d=b;d3dcompiler_47=b;d3d11=n;d3d10core=n;dxgi=n;mshtml='
 unset WINE_DWM_DISABLE_COMPOSITION WINE_NATIVE_FILE_DIALOG
 files=()
 for file in "$@"; do
