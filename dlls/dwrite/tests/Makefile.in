@@ -1,9 +1,10 @@
 TESTDLL = dwrite.dll
-IMPORTS = dwrite gdi32 user32
+IMPORTS = dwrite gdi32 user32 ole32
 
 SOURCES = \
 	analyzer.c \
 	font.c \
+	font_cache.c \
 	layout.c \
 	resource.rc \
 	wine_test.sfd

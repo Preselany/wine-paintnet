@@ -747,11 +747,13 @@ static HRESULT factory_get_system_collection(struct dwritefactory *factory,
         return hr;
     }
 
-    if (InterlockedCompareExchangePointer((void **)&factory->system_collections[family_model], collection, NULL))
-        IDWriteFontCollection_Release(collection);
+    InterlockedCompareExchangePointer((void **)&factory->system_collections[family_model], collection, NULL);
 
     hr = IDWriteFontCollection_QueryInterface(factory->system_collections[family_model], riid, out);
-    IDWriteFontCollection_Release(factory->system_collections[family_model]);
+    /* Release the reference created by this call, including when another
+     * thread won the cache insertion. Releasing its collection instead would
+     * consume one of that thread's references. */
+    IDWriteFontCollection_Release(collection);
     return hr;
 }
 
