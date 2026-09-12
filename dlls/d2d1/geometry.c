@@ -4407,14 +4407,167 @@ static HRESULT STDMETHODCALLTYPE d2d_path_geometry_Tessellate(ID2D1PathGeometry1
     return d2d_geometry_tessellate(&geometry->ID2D1Geometry_iface, transform, tolerance, sink);
 }
 
+struct d2d_boundary_edge
+{
+    UINT a, b, next;
+    BOOL used;
+};
+
+static int __cdecl d2d_boundary_edge_compare(const void *left, const void *right)
+{
+    const struct d2d_boundary_edge *a = left, *b = right;
+    UINT amin = min(a->a, a->b), bmin = min(b->a, b->b);
+    UINT amax = max(a->a, a->b), bmax = max(b->a, b->b);
+    if (amin != bmin) return amin < bmin ? -1 : 1;
+    return amax < bmax ? -1 : amax > bmax;
+}
+
+/* Emit only edges incident to one filled triangle. This removes internal
+ * triangulation edges and gives every filled operand winding number one. */
+static HRESULT d2d_geometry_emit_boundary(const struct d2d_geometry *geometry, ID2D1SimplifiedGeometrySink *sink)
+{
+    struct d2d_boundary_edge *edges = NULL;
+    UINT *heads = NULL, *order = NULL, current, start, edge;
+    size_t *ends = NULL, edge_count, count = 0, point_count = 0, figure_count = 0, i, j, k;
+    HRESULT hr = E_OUTOFMEMORY;
+
+    if (!geometry->fill.face_count) return S_OK;
+    edge_count = geometry->fill.face_count * 3;
+    if (!(edges = calloc(edge_count, sizeof(*edges)))
+            || !(heads = malloc(geometry->fill.vertex_count * sizeof(*heads)))
+            || !(order = malloc(edge_count * sizeof(*order)))
+            || !(ends = malloc(edge_count * sizeof(*ends)))) goto done;
+    memset(heads, 0xff, geometry->fill.vertex_count * sizeof(*heads));
+    for (i = 0; i < geometry->fill.face_count; ++i)
+    {
+        const struct d2d_face *face = &geometry->fill.faces[i];
+        const D2D1_POINT_2F *a = &geometry->fill.vertices[face->v[0]],
+                *b = &geometry->fill.vertices[face->v[1]], *c = &geometry->fill.vertices[face->v[2]];
+        BOOL reverse = ((double)b->x - a->x) * ((double)c->y - a->y)
+                - ((double)b->y - a->y) * ((double)c->x - a->x) < 0;
+        for (j = 0; j < 3; ++j)
+        {
+            edges[i*3+j].a = face->v[reverse ? (j+1)%3 : j];
+            edges[i*3+j].b = face->v[reverse ? j : (j+1)%3];
+        }
+    }
+    qsort(edges, edge_count, sizeof(*edges), d2d_boundary_edge_compare);
+    for (i = 0; i < edge_count; i = j)
+    {
+        for (j = i + 1; j < edge_count && !d2d_boundary_edge_compare(&edges[i], &edges[j]); ++j);
+        if (j - i == 1) edges[count++] = edges[i];
+        else if (j - i != 2) {hr = E_FAIL; goto done;}
+    }
+    for (i = 0; i < count; ++i)
+    {
+        edges[i].next = heads[edges[i].a];
+        heads[edges[i].a] = i;
+    }
+    for (i = 0; i < count; ++i)
+    {
+        if (edges[i].used) continue;
+        current = start = edges[i].a;
+        do
+        {
+            edge = heads[current];
+            while (edge != ~0u && edges[edge].used) edge = edges[edge].next;
+            if (edge == ~0u || point_count >= count) {hr = E_FAIL; goto done;}
+            heads[current] = edges[edge].next;
+            edges[edge].used = TRUE;
+            order[point_count++] = current;
+            current = edges[edge].b;
+        } while (current != start);
+        ends[figure_count++] = point_count;
+    }
+    for (i = 0, k = 0; i < figure_count; ++i)
+    {
+        ID2D1SimplifiedGeometrySink_BeginFigure(sink, geometry->fill.vertices[order[k++]], D2D1_FIGURE_BEGIN_FILLED);
+        while (k < ends[i]) ID2D1SimplifiedGeometrySink_AddLines(sink, &geometry->fill.vertices[order[k++]], 1);
+        ID2D1SimplifiedGeometrySink_EndFigure(sink, D2D1_FIGURE_END_CLOSED);
+    }
+    hr = S_OK;
+done:
+    free(ends); free(order); free(heads); free(edges);
+    return hr;
+}
+
+static HRESULT d2d_geometry_collect_lines(ID2D1Factory *factory, ID2D1Geometry *geometry,
+        const D2D1_MATRIX_3X2_F *transform, float tolerance, ID2D1PathGeometry **path)
+{
+    ID2D1GeometrySink *sink;
+    HRESULT hr;
+    if (FAILED(hr = ID2D1Factory_CreatePathGeometry(factory, path))) return hr;
+    if (FAILED(hr = ID2D1PathGeometry_Open(*path, &sink))) return hr;
+    hr = ID2D1Geometry_Simplify(geometry, D2D1_GEOMETRY_SIMPLIFICATION_OPTION_LINES,
+            transform, tolerance, (ID2D1SimplifiedGeometrySink *)sink);
+    if (SUCCEEDED(hr)) hr = ID2D1GeometrySink_Close(sink);
+    ID2D1GeometrySink_Release(sink);
+    return hr;
+}
+
+static HRESULT d2d_geometry_combine(struct d2d_geometry *source, ID2D1Geometry *input,
+        D2D1_COMBINE_MODE mode, const D2D1_MATRIX_3X2_F *transform, float tolerance,
+        ID2D1SimplifiedGeometrySink *sink)
+{
+    ID2D1PathGeometry *paths[3] = {0};
+    struct d2d_geometry *a, *b, *mesh;
+    ID2D1GeometrySink *collector;
+    HRESULT hr;
+    size_t i, count;
+
+    if (!input || !sink || mode > D2D1_COMBINE_MODE_EXCLUDE) return E_INVALIDARG;
+    if (FAILED(hr = d2d_geometry_collect_lines(source->factory, &source->ID2D1Geometry_iface,
+            NULL, tolerance, &paths[0]))) goto done;
+    if (FAILED(hr = d2d_geometry_collect_lines(source->factory, input, transform, tolerance, &paths[1]))) goto done;
+    a = unsafe_impl_from_ID2D1Geometry((ID2D1Geometry *)paths[0]);
+    b = unsafe_impl_from_ID2D1Geometry((ID2D1Geometry *)paths[1]);
+    if (FAILED(hr = ID2D1Factory_CreatePathGeometry(source->factory, &paths[2]))) goto done;
+    if (FAILED(hr = ID2D1PathGeometry_Open(paths[2], &collector))) goto done;
+    ID2D1GeometrySink_SetFillMode(collector, D2D1_FILL_MODE_WINDING);
+    hr = d2d_geometry_emit_boundary(a, (ID2D1SimplifiedGeometrySink *)collector);
+    if (SUCCEEDED(hr)) hr = d2d_geometry_emit_boundary(b, (ID2D1SimplifiedGeometrySink *)collector);
+    if (SUCCEEDED(hr)) hr = ID2D1GeometrySink_Close(collector);
+    ID2D1GeometrySink_Release(collector);
+    if (FAILED(hr)) goto done;
+    mesh = unsafe_impl_from_ID2D1Geometry((ID2D1Geometry *)paths[2]);
+    /* Input boundaries constrain the triangulation, so each face has constant
+     * membership in both operands. Select the requested boolean region. */
+    for (i = 0, count = 0; i < mesh->fill.face_count; ++i)
+    {
+        const struct d2d_face *face = &mesh->fill.faces[i];
+        const D2D1_POINT_2F *p0 = &mesh->fill.vertices[face->v[0]],
+                *p1 = &mesh->fill.vertices[face->v[1]], *p2 = &mesh->fill.vertices[face->v[2]];
+        D2D1_POINT_2F probe = {p0->x*.25f+p1->x*.25f+p2->x*.5f, p0->y*.25f+p1->y*.25f+p2->y*.5f};
+        BOOL inside_a = !!d2d_path_geometry_point_inside(a, &probe, TRUE);
+        BOOL inside_b = !!d2d_path_geometry_point_inside(b, &probe, TRUE), keep;
+        switch (mode)
+        {
+            case D2D1_COMBINE_MODE_UNION: keep = inside_a || inside_b; break;
+            case D2D1_COMBINE_MODE_INTERSECT: keep = inside_a && inside_b; break;
+            case D2D1_COMBINE_MODE_XOR: keep = inside_a != inside_b; break;
+            default: keep = inside_a && !inside_b; break;
+        }
+        if (keep) mesh->fill.faces[count++] = *face;
+    }
+    mesh->fill.face_count = count;
+    ID2D1SimplifiedGeometrySink_SetFillMode(sink, D2D1_FILL_MODE_WINDING);
+    ID2D1SimplifiedGeometrySink_SetSegmentFlags(sink, D2D1_PATH_SEGMENT_NONE);
+    hr = d2d_geometry_emit_boundary(mesh, sink);
+done:
+    for (i = 0; i < ARRAY_SIZE(paths); ++i) if (paths[i]) ID2D1PathGeometry_Release(paths[i]);
+    return hr;
+}
+
 static HRESULT STDMETHODCALLTYPE d2d_path_geometry_CombineWithGeometry(ID2D1PathGeometry1 *iface,
         ID2D1Geometry *geometry, D2D1_COMBINE_MODE combine_mode, const D2D1_MATRIX_3X2_F *transform,
         float tolerance, ID2D1SimplifiedGeometrySink *sink)
 {
-    FIXME("iface %p, geometry %p, combine_mode %#x, transform %p, tolerance %.8e, sink %p stub!\n",
+    struct d2d_geometry *source = impl_from_ID2D1PathGeometry1(iface);
+
+    TRACE("iface %p, geometry %p, combine_mode %#x, transform %p, tolerance %.8e, sink %p\n",
             iface, geometry, combine_mode, transform, tolerance, sink);
 
-    return E_NOTIMPL;
+    return d2d_geometry_combine(source, geometry, combine_mode, transform, tolerance, sink);
 }
 
 static HRESULT STDMETHODCALLTYPE d2d_path_geometry_Outline(ID2D1PathGeometry1 *iface,

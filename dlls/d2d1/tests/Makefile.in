@@ -23,4 +23,5 @@ SOURCES = \
 	histogram.c \
 	white_level.c \
 	widen.c \
+	path_combine.c \
 	opacity_metadata.c

@@ -12,7 +12,7 @@ The editor is not yet usable. The local working tree passes color-icon rendering
 window creation, the busy-spinner animation, zoom-slider gradient setup,
 WhiteLevelAdjustment, custom image shaders, document-thumbnail rendering, and
 a contained geometry subtraction in ColorRectangleControl. Default-stroke widening
-and a local path-combination implementation now also pass that control. Startup
+and path-combination support now also pass that control. Startup
 currently fails activating Windows.UI.Composition.Core.CompositorController
 (CLASS_E_CLASSNOTAVAILABLE). The editor remains unusable.
 
@@ -537,3 +537,19 @@ The focused regression compares native bounds, areas, and aliased pixels for
 24 rectangle, concave-path, and actual Paint.NET color-control cases. Five known
 Wine failures remain: two wide concave strokes and three cases with 1–3 sloping
 edge pixels differing from Windows. No application files were modified.
+
+## Path geometry combinations
+
+Path CombineWithGeometry now normalizes each operand's filled triangle mesh
+into oriented boundary contours, triangulates the combined boundaries, selects
+faces using the requested UNION/INTERSECT/XOR/EXCLUDE operation, and emits the
+result boundary. Both operands retain their fill rule; input transforms are
+applied before intersection. This handles the union of widened paths used by
+Paint.NET's color control. Rectangle geometry retains its separate contained
+combination implementation; other geometry overloads are not all implemented.
+
+Native comparisons cover 48 combinations including intersecting rectangles,
+concave polygons, ellipses, and a primary path containing a hole. All sampled
+pixels match. Ellipse flattening still produces bounds and area differences,
+tracked by 20 focused TODO assertions. Arbitrary complex topology and exact
+curve conformance remain work in progress.

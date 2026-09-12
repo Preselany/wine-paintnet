@@ -841,3 +841,19 @@ The unchanged application advances past Widen and, with the local path-combinati
 prototype, past its geometry union. Run `paintnet-20260912-051834-391715.log`
 fails at CompositorController activation; `pdncrash.38.log` records
 CLASS_E_CLASSNOTAVAILABLE. This is not successful editor startup.
+
+## Path combination and geometry integration — September 12, 2026
+
+Native jobs 077/078 measure 48 combinations at 12×12 RGBA32_FLOAT, covering
+three input shapes, four boolean modes, identity/sheared translated inputs,
+and a primary path with and without a hole. All 27,648 sampled Wine RGBA
+values equal Windows/WARP. All rectangle/polygon bounds and areas match;
+ellipse bounds and area differences remain documented by the regression.
+
+Focused `path_combine`: 28,260 checks on both Wine and native job 079. Windows
+has zero failures; Wine has 20 expected TODO failures and zero ordinary failures.
+The complete focused suite after both geometry changes runs 27 cases and
+175,903 checks, with 31 TODO failures and zero ordinary failures
+(`geometry-full-focused.log`). The unchanged Paint.NET startup advances to
+CompositorController activation. Editor interactions and final presentation
+remain unverified.
